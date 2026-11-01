@@ -61,4 +61,4 @@ function WebsiteApp() {
     <footer><div className="wrap footer-inner"><a className="brand" href="#"><span className="brand-mark">T</span><span>TRADE<span className="violet">XO</span><small>BY FIXBYTE INDIA</small></span></a><span>© {new Date().getFullYear()} TRADEXO. All rights reserved.</span><b>Developed & Maintained by FIXBYTE INDIA</b></div></footer>
   </div>
 }
-export default function App() { return window.location.pathname.replace(/\\/$/, '') === '/admin' ? <AdminPanel /> : <WebsiteApp /> }
+export default function App() { return ['/admin','/admin/'].includes(window.location.pathname) ? <AdminPanel /> : <WebsiteApp /> }
