@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import AdminPanel from './AdminPanel'
 import { ArrowUpRight, BarChart3, Boxes, Building2, Check, ChevronRight, FileText, Menu, Moon, ShieldCheck, Sun, Wallet, X } from 'lucide-react'
 
 const features = [
@@ -9,7 +10,7 @@ const features = [
   { icon: Building2, title: 'Multi-company ready', desc: 'A planned workspace for multiple companies and GST registrations.' },
   { icon: ShieldCheck, title: 'Offline-first desktop', desc: 'Designed to keep core desktop workflows available when internet is unavailable.' },
 ]
-function App() {
+function WebsiteApp() {
   const [dark, setDark] = useState(false)
   const [menu, setMenu] = useState(false)
   const [form, setForm] = useState({ name:'', mobile:'', business:'', plan:'Premium', message:'' })
@@ -60,4 +61,4 @@ function App() {
     <footer><div className="wrap footer-inner"><a className="brand" href="#"><span className="brand-mark">T</span><span>TRADE<span className="violet">XO</span><small>BY FIXBYTE INDIA</small></span></a><span>© {new Date().getFullYear()} TRADEXO. All rights reserved.</span><b>Developed & Maintained by FIXBYTE INDIA</b></div></footer>
   </div>
 }
-export default App
+export default function App() { return window.location.pathname.replace(/\\/$/, '') === '/admin' ? <AdminPanel /> : <WebsiteApp /> }
