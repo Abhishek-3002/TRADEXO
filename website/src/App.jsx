@@ -25,7 +25,7 @@ function WebsiteApp() {
   }
   return <div className={dark ? 'site dark' : 'site'}>
     <header className="nav wrap">
-      <a className="brand" href="#"><span className="brand-mark">B</span><span>TRADE<span className="violet">XO</span><small>BY FIXBYTE INDIA</small></span></a>
+      <a className="brand" href="#"><span className="brand-mark">B</span><span>BIZO<span className="violet">RA</span><small>BY FIXBYTE INDIA</small></span></a>
       <button className="mobile-menu" onClick={()=>setMenu(!menu)} aria-label="Toggle menu">{menu?<X/>:<Menu/>}</button>
       <nav className={menu?'open':''}><a href="#features" onClick={()=>setMenu(false)}>Features</a><a href="#plans" onClick={()=>setMenu(false)}>Plans</a><a href="#about" onClick={()=>setMenu(false)}>About</a><a href="#contact" className="nav-cta" onClick={()=>setMenu(false)}>Talk to Specialist <ArrowUpRight size={16}/></a></nav>
       <button className="theme" onClick={()=>setDark(!dark)} aria-label="Toggle theme">{dark?<Sun size={18}/>:<Moon size={18}/>}</button>
