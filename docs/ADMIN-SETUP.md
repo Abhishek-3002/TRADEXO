@@ -1,4 +1,4 @@
-# TRADEXO Owner Admin — setup status
+# BIZORA Owner Admin — setup status
 
 ## Implemented
 - Owner console route: `/admin`
@@ -9,7 +9,7 @@
 - No public sign-up flow in the admin interface
 
 ## Supabase project
-- Project: TRADEXO
+- Project: BIZORA
 - Region: ap-south-1 (Mumbai)
 - Project ref: `nelunfokvvlgujmjbiaj`
 
