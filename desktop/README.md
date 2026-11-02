@@ -1,4 +1,4 @@
-# TRADEXO Desktop starter
+# BIZORA Desktop starter
 
 Electron + React shell for the planned Windows 10/11 desktop ERP.
 
