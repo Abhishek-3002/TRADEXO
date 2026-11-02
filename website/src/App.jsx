@@ -18,7 +18,7 @@ function WebsiteApp() {
   const whatsapp = import.meta.env.VITE_SUPPORT_WHATSAPP || '7357204736'
   const submit = (e) => {
     e.preventDefault()
-    const id = 'TX-' + Date.now().toString().slice(-8)
+    const id = 'BIZ-' + Date.now().toString().slice(-8)
     const msg = `BIZORA enquiry ${id}%0AName: ${encodeURIComponent(form.name)}%0AMobile: ${encodeURIComponent(form.mobile)}%0ABusiness: ${encodeURIComponent(form.business)}%0APlan: ${encodeURIComponent(form.plan)}%0AMessage: ${encodeURIComponent(form.message)}`
     window.open(`https://wa.me/91${whatsapp}?text=${msg}`, '_blank', 'noopener,noreferrer')
     setSent(true)
