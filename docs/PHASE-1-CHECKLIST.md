@@ -1,6 +1,6 @@
 # Phase 1 checklist
 
-- [ ] Create a separate private GitHub repository named TRADEXO.
+- [ ] Create a separate private GitHub repository named BIZORA.
 - [ ] Upload this starter workspace.
 - [ ] Confirm Node.js and Git are installed.
 - [ ] Run the website locally.
