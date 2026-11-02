@@ -1,9 +1,9 @@
-# TRADEXO — Project 521
+# BIZORA — Project 521
 
 **One Business. One System. Complete Control.**  
 A product by **FIXBYTE INDIA**.
 
-This is the initial GitHub-ready starter workspace for TRADEXO. It contains:
+This is the initial GitHub-ready starter workspace for BIZORA. It contains:
 - `website/` — public product website (React + Vite)
 - `desktop/` — Windows desktop shell (Electron + React + Vite)
 - `docs/` — product requirements, roadmap, security and setup notes
@@ -38,16 +38,16 @@ npm run build:win
 ```
 
 ## GitHub upload
-1. Create a new **private** GitHub repository named `TRADEXO`.
+1. Create a new **private** GitHub repository named `BIZORA`.
 2. Extract this ZIP.
-3. Open the extracted `TRADEXO-Project-521` folder in VS Code.
+3. Open the extracted `BIZORA-Project-521` folder in VS Code.
 4. Run:
 ```powershell
 git init
 git add .
-git commit -m "Start TRADEXO Project 521"
+git commit -m "Start BIZORA Project 521"
 git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/TRADEXO.git
+git remote add origin https://github.com/YOUR-USERNAME/BIZORA.git
 git push -u origin main
 ```
 Replace `YOUR-USERNAME` with your GitHub username.
