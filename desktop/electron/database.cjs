@@ -182,6 +182,11 @@ function optionalText(value, label, max = 240) {
   if (clean.length > max) throw new Error(label + ' must be ' + max + ' characters or fewer.')
   return clean || null
 }
+function validISODate(value) {
+  return typeof value === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+    !Number.isNaN(Date.parse(value + 'T00:00:00Z')) &&
+    new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value
+}
 function nonNegativeNumber(value, label) {
   const number = Number(value ?? 0)
   if (!Number.isFinite(number) || number < 0) throw new Error(label + ' must be a valid non-negative number.')
@@ -482,11 +487,13 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const fy = rows(db, "SELECT id,start_date,end_date FROM financial_years WHERE company_id=? AND status='active'", [activeCompanyId])[0]
       if (!fy) throw new Error('Create and activate a financial year before creating invoices.')
       const invoiceDate = requiredText(input.invoiceDate, 'Invoice date', 10)
+      if (!validISODate(invoiceDate)) throw new Error('Enter a valid invoice date in YYYY-MM-DD format.')
       if (invoiceDate < fy.start_date || invoiceDate > fy.end_date) throw new Error('Invoice date must fall within the active financial year.')
       const customerId = requiredText(input.customerId, 'Customer', 80)
       if (!rows(db, "SELECT id FROM customers WHERE id=? AND company_id=? AND status='active'", [customerId,activeCompanyId]).length) throw new Error('Select a customer from the active company.')
       const invoiceNumber = requiredText(input.invoiceNumber, 'Invoice number', 50)
       const dueDate = optionalText(input.dueDate, 'Due date', 10)
+      if (dueDate && !validISODate(dueDate)) throw new Error('Enter a valid due date in YYYY-MM-DD format.')
       if (dueDate && dueDate < invoiceDate) throw new Error('Due date cannot be earlier than invoice date.')
       if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100) throw new Error('Add between 1 and 100 invoice items.')
       const items = input.items.map(item => {
@@ -568,6 +575,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const fy = rows(db,"SELECT id,start_date,end_date FROM financial_years WHERE company_id=? AND status='active'",[activeCompanyId])[0]
       if (!fy) throw new Error('Create and activate a financial year before recording purchases.')
       const billDate = requiredText(input.billDate,'Bill date',10)
+      if (!validISODate(billDate)) throw new Error('Enter a valid supplier bill date in YYYY-MM-DD format.')
       if (billDate < fy.start_date || billDate > fy.end_date) throw new Error('Bill date must fall within the active financial year.')
       const vendorId = requiredText(input.vendorId,'Vendor',80)
       if (!rows(db,"SELECT id FROM vendors WHERE id=? AND company_id=? AND status='active'",[vendorId,activeCompanyId]).length) throw new Error('Select a vendor from the active company.')
