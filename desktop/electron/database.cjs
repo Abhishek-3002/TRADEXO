@@ -838,22 +838,24 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const paymentDate = requiredText(input.paymentDate,'Payment date',10)
       if (!validISODate(paymentDate)) throw new Error('Enter a valid payment date in YYYY-MM-DD format.')
       const paymentNumber = requiredText(input.paymentNumber ?? input.payment_number,'Payment number',50)
-      const amount = nonNegativeNumber(input.amount,'Payment amount')
-      if (amount <= 0) throw new Error('Payment amount must be greater than zero.')
+      const rawAmount = nonNegativeNumber(input.amount,'Payment amount')
+      const amountPaise = Math.round(rawAmount * 100)
+      if (amountPaise <= 0) throw new Error('Payment amount must be at least ₹0.01.')
       const method = requiredText(input.paymentMethod ?? input.payment_method ?? 'upi','Payment method',30)
       if (!['cash','upi','bank_transfer','cheque','card','other'].includes(method)) throw new Error('Choose a supported payment method.')
-      const previous = Number(rows(db,'SELECT COALESCE(SUM(amount),0) AS total FROM purchase_payments WHERE bill_id=? AND company_id=?',[billId,activeCompanyId])[0]?.total || 0)
-      const outstanding = Math.round((Number(bill.total_amount)-previous)*100)/100
-      if (amount > outstanding + 0.000001) throw new Error('Payment exceeds the outstanding supplier balance.')
+      const totalPaise = Math.round(Number(bill.total_amount) * 100)
+      const previousPaise = Math.round(Number(rows(db,'SELECT COALESCE(SUM(amount),0) AS total FROM purchase_payments WHERE bill_id=? AND company_id=?',[billId,activeCompanyId])[0]?.total || 0) * 100)
+      if (previousPaise + amountPaise > totalPaise) throw new Error('Payment exceeds the outstanding supplier balance.')
+      const amount = amountPaise / 100
       const payment = { id:randomUUID(),company_id:activeCompanyId,bill_id:billId,payment_number:paymentNumber,payment_date:paymentDate,
-        amount:Math.round(amount*100)/100,payment_method:method,reference:optionalText(input.reference,'Payment reference',100),
+        amount,payment_method:method,reference:optionalText(input.reference,'Payment reference',100),
         notes:optionalText(input.notes,'Notes',500),created_at:new Date().toISOString() }
       withTransaction(()=>{
         run(db,'INSERT INTO purchase_payments (id,company_id,bill_id,payment_number,payment_date,amount,payment_method,reference,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
           [payment.id,payment.company_id,payment.bill_id,payment.payment_number,payment.payment_date,payment.amount,payment.payment_method,payment.reference,payment.notes,payment.created_at])
         recordAudit('purchase_payment.recorded','purchase_payment',payment.id,{bill_id:billId,payment_number:paymentNumber,amount:payment.amount})
       })
-      return { ...payment, ...this.getPurchaseBill(billId) }
+      return { payment, bill: this.getPurchaseBill(billId) }
     },
     reversePurchaseBill(billId, reason) {
       const id=requiredText(billId,'Purchase bill ID',80)
