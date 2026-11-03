@@ -1,8 +1,8 @@
 # BIZORA Project 521 — Development Status
 
-Updated: 2026-11-03
+Updated: 2026-11-04
 
-Latest validation: GitHub Actions run 41694354825 passed (website build, desktop build and all seven database tests).
+Latest validation: GitHub Actions run 41694819816 passed (website build, desktop build and all nine database tests).
 
 ## Verified baseline
 - Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
@@ -17,7 +17,7 @@ Latest validation: GitHub Actions run 41694354825 passed (website build, desktop
 - Multiple companies can be created and switched from Company Settings.
 - Multiple GSTIN registrations can be recorded per company; the app checks the 15-character format only and does not verify GST portal status.
 - Existing single-company records are migrated into the first company when the database is upgraded.
-- Append-only audit events are written for company creation/switching and customer/product/GSTIN creation.
+- Append-only audit events are written for company creation/switching and customer/product/GSTIN creation.\n- Encrypted backup export and validated restore are available from the desktop Data Backup screen. Restore requires confirmation, validates encryption, SQLite integrity, schema version and required tables, and leaves current data intact if validation fails.
 - No customer or product delete API is exposed.
 
 ## Known limitations — do not use for live business records yet
@@ -40,4 +40,4 @@ Latest validation: GitHub Actions run 41694354825 passed (website build, desktop
 9. Build and test a signed Windows installer on Windows 10/11.
 
 ## Release gate
-Do not publish a customer download or call the product production-ready until Windows installation, migration, backup/restore, recovery, security, tax and sync tests pass.
+Do not publish a customer download or call the product production-ready until Windows installation, migration, recovery, security, tax and sync tests pass.
