@@ -133,7 +133,30 @@ async function openLocalDatabase(filePath = null) {
   const activeStored = rows(db, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
   let activeCompanyId = companies.some(company => company.id === activeStored) ? activeStored : companies[0].id
   run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('active_company_id',?)", [activeCompanyId])
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','2')")
+  const storedSchemaVersion = Number(rows(db, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 1)
+  if (storedSchemaVersion < 3) {
+    // Replace the legacy database-wide SKU constraint with company-scoped uniqueness.
+    db.exec(`
+      CREATE TABLE products_migrating (
+        id TEXT PRIMARY KEY,
+        company_id TEXT REFERENCES companies(id),
+        name TEXT NOT NULL,
+        sku TEXT,
+        unit TEXT NOT NULL DEFAULT 'pcs',
+        selling_price REAL NOT NULL DEFAULT 0 CHECK (selling_price >= 0),
+        opening_stock REAL NOT NULL DEFAULT 0 CHECK (opening_stock >= 0),
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO products_migrating (id,company_id,name,sku,unit,selling_price,opening_stock,status,created_at)
+        SELECT id,company_id,name,sku,unit,selling_price,opening_stock,status,created_at FROM products;
+      DROP TABLE products;
+      ALTER TABLE products_migrating RENAME TO products;
+      CREATE INDEX products_name_idx ON products(name);
+      CREATE UNIQUE INDEX products_company_sku_unique ON products(company_id,sku) WHERE sku IS NOT NULL;
+    `)
+  }
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','3')")
 
   function persist() {
     if (!filePath) return
