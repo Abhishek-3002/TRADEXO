@@ -103,3 +103,30 @@ test('refuses to save a disk database without an encryption provider', async () 
   assert.equal(fs.existsSync(file), false)
   fs.rmSync(folder, { recursive: true, force: true })
 })
+
+test('creates encrypted backup and restores the saved company data', async () => {
+  const source = await openLocalDatabase(null, testEncryption)
+  source.createCustomer({ name: 'Customer From Backup' })
+  const backup = source.createEncryptedBackup()
+  assert.equal(backup.subarray(0, Buffer.byteLength('BIZORA_DB_ENC_V1\\n')).toString(), 'BIZORA_DB_ENC_V1\\n')
+  source.close()
+
+  const target = await openLocalDatabase(null, testEncryption)
+  target.createCustomer({ name: 'Current Local Customer' })
+  const result = target.restoreEncryptedBackup(backup)
+  assert.equal(result.restored, true)
+  assert.equal(target.listCustomers().length, 1)
+  assert.equal(target.listCustomers()[0].name, 'Customer From Backup')
+  assert.ok(target.getSummary().audit_events >= 2)
+  target.close()
+})
+
+test('rejects a damaged backup without replacing current data', async () => {
+  const db = await openLocalDatabase(null, testEncryption)
+  db.createCustomer({ name: 'Keep This Customer' })
+  const backup = db.createEncryptedBackup()
+  backup[backup.length - 1] ^= 0xff
+  assert.throws(() => db.restoreEncryptedBackup(backup), /Backup restore failed/)
+  assert.equal(db.listCustomers()[0].name, 'Keep This Customer')
+  db.close()
+})
