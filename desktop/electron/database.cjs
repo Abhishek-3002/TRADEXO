@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
+const { calculateDocumentTax } = require('./tax-engine.cjs')
 
 const schema = `
 PRAGMA foreign_keys = ON;
@@ -98,6 +99,15 @@ CREATE TABLE IF NOT EXISTS sales_invoices (
   due_date TEXT,
   status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','posted','reversed')),
   total_amount REAL NOT NULL CHECK(total_amount >= 0),
+  taxable_value REAL NOT NULL DEFAULT 0 CHECK(taxable_value >= 0),
+  cgst REAL NOT NULL DEFAULT 0 CHECK(cgst >= 0),
+  sgst REAL NOT NULL DEFAULT 0 CHECK(sgst >= 0),
+  igst REAL NOT NULL DEFAULT 0 CHECK(igst >= 0),
+  total_tax REAL NOT NULL DEFAULT 0 CHECK(total_tax >= 0),
+  tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(tax_mode IN ('none','exclusive','inclusive')),
+  supply_type TEXT NOT NULL DEFAULT 'intra' CHECK(supply_type IN ('intra','inter')),
+  place_of_supply_state_code TEXT,
+  seller_gstin TEXT,
   notes TEXT,
   created_at TEXT NOT NULL,
   posted_at TEXT,
@@ -122,7 +132,13 @@ CREATE TABLE IF NOT EXISTS sales_invoice_items (
   description TEXT NOT NULL,
   quantity REAL NOT NULL CHECK(quantity > 0),
   unit_price REAL NOT NULL CHECK(unit_price >= 0),
-  line_total REAL NOT NULL CHECK(line_total >= 0)
+  line_total REAL NOT NULL CHECK(line_total >= 0),
+  tax_rate REAL NOT NULL DEFAULT 0 CHECK(tax_rate >= 0 AND tax_rate <= 100),
+  taxable_value REAL NOT NULL DEFAULT 0 CHECK(taxable_value >= 0),
+  cgst REAL NOT NULL DEFAULT 0 CHECK(cgst >= 0),
+  sgst REAL NOT NULL DEFAULT 0 CHECK(sgst >= 0),
+  igst REAL NOT NULL DEFAULT 0 CHECK(igst >= 0),
+  total_tax REAL NOT NULL DEFAULT 0 CHECK(total_tax >= 0)
 );
 CREATE INDEX IF NOT EXISTS sales_invoice_items_invoice_idx ON sales_invoice_items(invoice_id);
 CREATE TABLE IF NOT EXISTS purchase_bills (
@@ -283,7 +299,13 @@ async function openLocalDatabase(filePath = null, encryption = null) {
   }
   // Version 6 adds an append-only customer receipt ledger.
   if (storedSchemaVersion < 6) db.exec("CREATE TABLE IF NOT EXISTS sales_receipts (\n  id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id),\n  invoice_id TEXT NOT NULL REFERENCES sales_invoices(id), receipt_number TEXT NOT NULL,\n  receipt_date TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),\n  payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),\n  reference TEXT, notes TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,receipt_number)\n);\nCREATE INDEX IF NOT EXISTS sales_receipts_invoice_idx ON sales_receipts(company_id,invoice_id,receipt_date);\nCREATE TRIGGER IF NOT EXISTS sales_receipts_no_update BEFORE UPDATE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts are immutable.'); END;\nCREATE TRIGGER IF NOT EXISTS sales_receipts_no_delete BEFORE DELETE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts cannot be deleted.'); END;");
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','6')")
+  const invoiceColumns = rows(db, 'PRAGMA table_info(sales_invoices)').map(column => column.name)
+  const invoiceTaxColumns = { taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0', tax_mode:"TEXT NOT NULL DEFAULT 'none'", supply_type:"TEXT NOT NULL DEFAULT 'intra'", place_of_supply_state_code:'TEXT', seller_gstin:'TEXT' }
+  for (const [name, definition] of Object.entries(invoiceTaxColumns)) if (!invoiceColumns.includes(name)) db.exec(`ALTER TABLE sales_invoices ADD COLUMN ${name} ${definition}`)
+  const itemColumns = rows(db, 'PRAGMA table_info(sales_invoice_items)').map(column => column.name)
+  const itemTaxColumns = { tax_rate:'REAL NOT NULL DEFAULT 0', taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0' }
+  for (const [name, definition] of Object.entries(itemTaxColumns)) if (!itemColumns.includes(name)) db.exec(`ALTER TABLE sales_invoice_items ADD COLUMN ${name} ${definition}`)
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','7')")
 
   function persist() {
     if (!filePath) return
@@ -314,7 +336,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -329,6 +351,15 @@ async function openLocalDatabase(filePath = null, encryption = null) {
           UPDATE app_meta SET value='5' WHERE key='schema_version';`)
       }
       if (version < 6) { candidate.exec("CREATE TABLE IF NOT EXISTS sales_receipts (\n  id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id),\n  invoice_id TEXT NOT NULL REFERENCES sales_invoices(id), receipt_number TEXT NOT NULL,\n  receipt_date TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),\n  payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),\n  reference TEXT, notes TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,receipt_number)\n);\nCREATE INDEX IF NOT EXISTS sales_receipts_invoice_idx ON sales_receipts(company_id,invoice_id,receipt_date);\nCREATE TRIGGER IF NOT EXISTS sales_receipts_no_update BEFORE UPDATE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts are immutable.'); END;\nCREATE TRIGGER IF NOT EXISTS sales_receipts_no_delete BEFORE DELETE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts cannot be deleted.'); END;\nUPDATE app_meta SET value='6' WHERE key='schema_version';"); }
+      if (version < 7) {
+        const invoiceColumns = rows(candidate, 'PRAGMA table_info(sales_invoices)').map(column => column.name)
+        const invoiceTaxColumns = { taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0', tax_mode:\"TEXT NOT NULL DEFAULT 'none'\", supply_type:\"TEXT NOT NULL DEFAULT 'intra'\", place_of_supply_state_code:'TEXT', seller_gstin:'TEXT' }
+        for (const [name, definition] of Object.entries(invoiceTaxColumns)) if (!invoiceColumns.includes(name)) candidate.exec(`ALTER TABLE sales_invoices ADD COLUMN ${name} ${definition}`)
+        const itemColumns = rows(candidate, 'PRAGMA table_info(sales_invoice_items)').map(column => column.name)
+        const itemTaxColumns = { tax_rate:'REAL NOT NULL DEFAULT 0', taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0' }
+        for (const [name, definition] of Object.entries(itemTaxColumns)) if (!itemColumns.includes(name)) candidate.exec(`ALTER TABLE sales_invoice_items ADD COLUMN ${name} ${definition}`)
+        candidate.exec(\"UPDATE app_meta SET value='7' WHERE key='schema_version'\")
+      }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
         throw new Error('Backup has no valid active company.')
@@ -513,27 +544,51 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       if (dueDate && !validISODate(dueDate)) throw new Error('Enter a valid due date in YYYY-MM-DD format.')
       if (dueDate && dueDate < invoiceDate) throw new Error('Due date cannot be earlier than invoice date.')
       if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100) throw new Error('Add between 1 and 100 invoice items.')
-      const items = input.items.map(item => {
+      const settings = this.getCompanyTaxSettings()
+      const sellerRegistration = settings.default_gstin_id
+        ? rows(db, "SELECT gstin,state_code FROM company_gstins WHERE id=? AND company_id=? AND status='active'", [settings.default_gstin_id,activeCompanyId])[0]
+        : null
+      if (settings.gst_enabled && !sellerRegistration) throw new Error('Select an active seller GSTIN in Company GST settings before creating a GST invoice.')
+      const placeState = settings.place_of_supply_state_code || sellerRegistration?.state_code || null
+      if (settings.gst_enabled && !placeState) throw new Error('Set the place-of-supply state code in Company GST settings.')
+      const supplyType = sellerRegistration && placeState
+        ? (sellerRegistration.state_code === placeState ? 'intra' : 'inter')
+        : 'intra'
+      const taxMode = settings.gst_enabled ? settings.default_tax_mode : 'none'
+      const rawItems = input.items.map(item => {
         const productId = requiredText(item.productId, 'Product', 80)
         const product = rows(db, "SELECT id,name,unit FROM products WHERE id=? AND company_id=? AND status='active'", [productId,activeCompanyId])[0]
         if (!product) throw new Error('An invoice product does not belong to the active company or is inactive.')
         const quantity = Number(item.quantity)
         if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 100000000) throw new Error('Item quantity must be greater than zero.')
         const unitPrice = nonNegativeNumber(item.unitPrice, 'Unit price')
+        const taxRate = settings.gst_enabled ? Number(item.taxRate ?? 0) : 0
+        if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) throw new Error('GST rate must be between 0 and 100.')
         const description = optionalText(item.description, 'Item description', 180) || product.name
-        const lineTotal = Math.round(quantity * unitPrice * 100) / 100
-        return { id: randomUUID(), product_id: productId, description, quantity, unit_price: unitPrice, line_total: lineTotal }
+        return { product_id:productId,description,quantity,unit_price:unitPrice,tax_rate:taxRate,taxMode,supplyType }
       })
-      const total = Math.round(items.reduce((sum,item)=>sum+item.line_total,0)*100)/100
-      const invoice = { id: randomUUID(), company_id: activeCompanyId, financial_year_id: fy.id, customer_id: customerId,
-        invoice_number: invoiceNumber, invoice_date: invoiceDate, due_date: dueDate, status: 'draft', total_amount: total,
-        notes: optionalText(input.notes,'Notes',1000), created_at: new Date().toISOString() }
+      const tax = calculateDocumentTax(rawItems.map(item => ({
+        quantity:item.quantity,unitPrice:item.unit_price,taxRate:item.tax_rate,taxMode,supplyType
+      })))
+      const items = rawItems.map((item,index)=>({
+        id:randomUUID(),...item,
+        line_total:tax.lines[index].total,
+        taxable_value:tax.lines[index].taxable_value,
+        cgst:tax.lines[index].cgst,sgst:tax.lines[index].sgst,igst:tax.lines[index].igst,
+        total_tax:tax.lines[index].total_tax
+      }))
+      const invoice = { id:randomUUID(),company_id:activeCompanyId,financial_year_id:fy.id,customer_id:customerId,
+        invoice_number:invoiceNumber,invoice_date:invoiceDate,due_date:dueDate,status:'draft',total_amount:tax.total,
+        taxable_value:tax.taxable_value,cgst:tax.cgst,sgst:tax.sgst,igst:tax.igst,total_tax:tax.total_tax,
+        tax_mode:taxMode,supply_type:supplyType,place_of_supply_state_code:placeState,
+        seller_gstin:sellerRegistration?.gstin || null,
+        notes:optionalText(input.notes,'Notes',1000),created_at:new Date().toISOString() }
       withTransaction(() => {
-        run(db, 'INSERT INTO sales_invoices (id,company_id,financial_year_id,customer_id,invoice_number,invoice_date,due_date,status,total_amount,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-          [invoice.id,invoice.company_id,invoice.financial_year_id,invoice.customer_id,invoice.invoice_number,invoice.invoice_date,invoice.due_date,invoice.status,invoice.total_amount,invoice.notes,invoice.created_at])
-        for (const item of items) run(db, 'INSERT INTO sales_invoice_items (id,invoice_id,company_id,product_id,description,quantity,unit_price,line_total) VALUES (?,?,?,?,?,?,?,?)',
-          [item.id,invoice.id,activeCompanyId,item.product_id,item.description,item.quantity,item.unit_price,item.line_total])
-        recordAudit('sales_invoice.draft_created','sales_invoice',invoice.id,{invoice_number:invoiceNumber,total_amount:total})
+        run(db, 'INSERT INTO sales_invoices (id,company_id,financial_year_id,customer_id,invoice_number,invoice_date,due_date,status,total_amount,taxable_value,cgst,sgst,igst,total_tax,tax_mode,supply_type,place_of_supply_state_code,seller_gstin,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [invoice.id,invoice.company_id,invoice.financial_year_id,invoice.customer_id,invoice.invoice_number,invoice.invoice_date,invoice.due_date,invoice.status,invoice.total_amount,invoice.taxable_value,invoice.cgst,invoice.sgst,invoice.igst,invoice.total_tax,invoice.tax_mode,invoice.supply_type,invoice.place_of_supply_state_code,invoice.seller_gstin,invoice.notes,invoice.created_at])
+        for (const item of items) run(db, 'INSERT INTO sales_invoice_items (id,invoice_id,company_id,product_id,description,quantity,unit_price,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [item.id,invoice.id,activeCompanyId,item.product_id,item.description,item.quantity,item.unit_price,item.line_total,item.tax_rate,item.taxable_value,item.cgst,item.sgst,item.igst,item.total_tax])
+        recordAudit('sales_invoice.draft_created','sales_invoice',invoice.id,{invoice_number:invoiceNumber,total_amount:tax.total,taxable_value:tax.taxable_value,total_tax:tax.total_tax,supply_type:supplyType})
       })
       return invoice
     },
@@ -545,7 +600,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
           WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)>=i.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
         FROM sales_invoices i JOIN customers c ON c.id=i.customer_id JOIN financial_years fy ON fy.id=i.financial_year_id WHERE i.id=? AND i.company_id=?`, [requiredText(invoiceId,'Invoice ID',80),activeCompanyId])[0]
       if (!invoice) return null
-      invoice.items = rows(db, 'SELECT id,product_id,description,quantity,unit_price,line_total FROM sales_invoice_items WHERE invoice_id=? AND company_id=?', [invoice.id,activeCompanyId])
+      invoice.items = rows(db, 'SELECT id,product_id,description,quantity,unit_price,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax FROM sales_invoice_items WHERE invoice_id=? AND company_id=?', [invoice.id,activeCompanyId])
       return invoice
     },
     listSalesReceipts(invoiceId = null, limit = 200) {
