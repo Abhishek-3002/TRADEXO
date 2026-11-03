@@ -108,7 +108,6 @@ async function openLocalDatabase(filePath = null, encryption = null) {
   const wasmDirectory = path.dirname(require.resolve('sql.js'))
   const SQL = await initSqlJs({ locateFile: file => path.join(wasmDirectory, file) })
   let db
-  let importedLegacyPlaintext = false
   const encryptedPrefix = Buffer.from('BIZORA_DB_ENC_V1\\n')
   if (filePath && fs.existsSync(filePath)) {
     const stored = fs.readFileSync(filePath)
@@ -118,7 +117,6 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     } else {
       // One-time compatibility import for the earlier plaintext development database.
       db = new SQL.Database(new Uint8Array(stored))
-      importedLegacyPlaintext = true
     }
   } else {
     db = new SQL.Database()
