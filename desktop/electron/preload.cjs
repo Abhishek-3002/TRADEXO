@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('bizora', Object.freeze({
     listVendors: limit => ipcRenderer.invoke('db:vendors:list', limit),
     createVendor: input => ipcRenderer.invoke('db:vendors:create', input),
     listSalesInvoices: limit => ipcRenderer.invoke('db:invoices:list', limit),
+    listSalesReceipts: (invoiceId, limit) => ipcRenderer.invoke('db:receipts:list', invoiceId, limit),
+    recordSalesReceipt: input => ipcRenderer.invoke('db:receipts:create', input),
     createSalesInvoiceDraft: input => ipcRenderer.invoke('db:invoices:create-draft', input),
     getSalesInvoice: id => ipcRenderer.invoke('db:invoices:get', id),
     postSalesInvoice: id => ipcRenderer.invoke('db:invoices:post', id),
