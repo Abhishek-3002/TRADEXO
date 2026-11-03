@@ -307,7 +307,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const label = requiredText(input.label, 'Financial year label', 40)
       const startDate = requiredText(input.startDate, 'Start date', 10)
       const endDate = requiredText(input.endDate, 'End date', 10)
-      const validDate = value => /^\\d{4}-\\d{2}-\\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0,10) === value
+      const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0,10) === value
       if (!validDate(startDate) || !validDate(endDate)) throw new Error('Enter valid dates in YYYY-MM-DD format.')
       if (startDate > endDate) throw new Error('Financial year start date must be on or before its end date.')
       const overlap = rows(db, 'SELECT label FROM financial_years WHERE company_id=? AND NOT(end_date < ? OR start_date > ?) LIMIT 1', [companyId, startDate, endDate])[0]
@@ -338,7 +338,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const taxMode = requiredText(input.defaultTaxMode || 'none', 'Tax mode', 20)
       if (!['none','exclusive','inclusive'].includes(taxMode)) throw new Error('Choose none, exclusive or inclusive tax mode.')
       const stateCode = optionalText(input.placeOfSupplyStateCode, 'Place of supply state code', 2)
-      if (stateCode && !/^\\d{2}$/.test(stateCode)) throw new Error('State code must contain exactly two digits.')
+      if (stateCode && !/^\d{2}$/.test(stateCode)) throw new Error('State code must contain exactly two digits.')
       const gstinId = input.defaultGstinId ? requiredText(input.defaultGstinId, 'Default GSTIN ID', 80) : null
       if (gstEnabled && !gstinId) throw new Error('Select a GSTIN for GST-enabled settings.')
       if (gstinId && !rows(db, "SELECT id FROM company_gstins WHERE id=? AND company_id=? AND status='active'", [gstinId, activeCompanyId]).length) throw new Error('Selected GSTIN does not belong to the active company.')
