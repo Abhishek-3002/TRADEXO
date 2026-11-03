@@ -9,6 +9,11 @@ Latest validation: GitHub Actions run 41705333359 passed on commit `e284eeba4ee0
 - Multi-company, company-wise financial year and GST settings are implemented on `rename-to-bizora` in open PR #2; the PR remains unmerged.
 - This repository is a development foundation, not a production-ready ERP.
 
+## Expenses and indirect income
+- Company- and financial-year-scoped expense and indirect-income entries are recorded in an append-only ledger with category, date, party, amount, payment method and reference.
+- Company summary totals income, expenses and net entries; it is explicitly not presented as a statutory profit-and-loss statement.
+- Database schema version 13 adds the immutable ledger and migrates existing databases and encrypted backups.
+
 ## Supplier Payables Aging
 - Reports workspace now includes a supplier payables aging summary using posted purchase bills and append-only supplier payment records.
 - Fully paid and unposted bills are excluded; current, 1–30, 31–60, 61–90 and over-90-day buckets are calculated as of a selected date.

@@ -282,6 +282,20 @@ test('purchase GST records intra-state CGST/SGST and inter-state IGST', async ()
   db.close()
 })
 
+test('records company-scoped expense and income entries and returns summary totals', async () => {
+  const { db } = await createTradingFixture()
+  const expense = db.createFinancialEntry({ entryType:'expense',entryNumber:'EXP-001',entryDate:'2026-04-10',category:'Rent',description:'April shop rent',amount:2500,paymentMethod:'bank_transfer' })
+  const income = db.createFinancialEntry({ entryType:'income',entryNumber:'INC-001',entryDate:'2026-04-11',category:'Commission',description:'Supplier commission',amount:500,paymentMethod:'upi' })
+  assert.equal(expense.amount,2500)
+  assert.equal(income.entry_type,'income')
+  assert.equal(db.listFinancialEntries().length,2)
+  assert.equal(db.listFinancialEntries('expense').length,1)
+  assert.deepEqual(db.getFinancialEntrySummary(),{income_total:500,expense_total:2500,net_total:-2000})
+  assert.throws(()=>db.createFinancialEntry({entryType:'expense',entryNumber:'EXP-002',entryDate:'2026-04-12',category:'Rent',description:'Zero',amount:0}),/at least ₹0.01/)
+  assert.throws(()=>db.createFinancialEntry({entryType:'expense',entryNumber:'EXP-001',entryDate:'2026-04-12',category:'Rent',description:'Duplicate',amount:10}),/UNIQUE/)
+  db.close()
+})
+
 test('supplier payments track purchase bill balances, support partial payment and reject overpayment', async () => {
   const { db, vendor, product } = await createTradingFixture()
   const bill = db.createPurchaseBillDraft({ vendorId: vendor.id, billNumber: 'PAY-TEST-01', billDate: '2026-04-10', items: [{ productId: product.id, quantity: 4, unitCost: 25 }] })

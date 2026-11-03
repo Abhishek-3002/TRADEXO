@@ -212,6 +212,25 @@ CREATE TABLE IF NOT EXISTS purchase_payments (
   UNIQUE(company_id,payment_number)
 );
 CREATE INDEX IF NOT EXISTS purchase_payments_bill_idx ON purchase_payments(company_id,bill_id,payment_date);
+CREATE TABLE IF NOT EXISTS financial_entries (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL REFERENCES companies(id),
+  financial_year_id TEXT NOT NULL REFERENCES financial_years(id),
+  entry_type TEXT NOT NULL CHECK(entry_type IN ('expense','income')),
+  entry_number TEXT NOT NULL,
+  entry_date TEXT NOT NULL,
+  category TEXT NOT NULL,
+  party_name TEXT,
+  description TEXT NOT NULL,
+  amount REAL NOT NULL CHECK(amount > 0),
+  payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),
+  reference TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(company_id,financial_year_id,entry_number)
+);
+CREATE INDEX IF NOT EXISTS financial_entries_date_idx ON financial_entries(company_id,entry_date,entry_type);
+CREATE TRIGGER IF NOT EXISTS financial_entries_no_update BEFORE UPDATE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries are immutable.'); END;
+CREATE TRIGGER IF NOT EXISTS financial_entries_no_delete BEFORE DELETE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries cannot be deleted.'); END;
 CREATE TRIGGER IF NOT EXISTS purchase_payments_no_update BEFORE UPDATE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries are immutable.'); END;
 CREATE TRIGGER IF NOT EXISTS purchase_payments_no_delete BEFORE DELETE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries cannot be deleted.'); END;
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -388,7 +407,16 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     const productColumns = rows(db, 'PRAGMA table_info(products)').map(column => column.name)
     if (!productColumns.includes('default_tax_rate')) db.exec('ALTER TABLE products ADD COLUMN default_tax_rate REAL NOT NULL DEFAULT 0 CHECK(default_tax_rate >= 0 AND default_tax_rate <= 100)')
   }
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','12')")
+  if (storedSchemaVersion < 13) db.exec(`CREATE TABLE IF NOT EXISTS financial_entries (
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), financial_year_id TEXT NOT NULL REFERENCES financial_years(id),
+    entry_type TEXT NOT NULL CHECK(entry_type IN ('expense','income')), entry_number TEXT NOT NULL, entry_date TEXT NOT NULL,
+    category TEXT NOT NULL, party_name TEXT, description TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),
+    payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),
+    reference TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,financial_year_id,entry_number)
+  ); CREATE INDEX IF NOT EXISTS financial_entries_date_idx ON financial_entries(company_id,entry_date,entry_type);
+  CREATE TRIGGER IF NOT EXISTS financial_entries_no_update BEFORE UPDATE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries are immutable.'); END;
+  CREATE TRIGGER IF NOT EXISTS financial_entries_no_delete BEFORE DELETE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries cannot be deleted.'); END;`)
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','13')")
 
   function persist() {
     if (!filePath) return
@@ -419,7 +447,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -486,11 +514,23 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         if (!productColumns.includes('default_tax_rate')) candidate.exec('ALTER TABLE products ADD COLUMN default_tax_rate REAL NOT NULL DEFAULT 0 CHECK(default_tax_rate >= 0 AND default_tax_rate <= 100)')
         candidate.exec("UPDATE app_meta SET value='12' WHERE key='schema_version'")
       }
+      if (version < 13) {
+        candidate.exec(`CREATE TABLE IF NOT EXISTS financial_entries (
+          id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), financial_year_id TEXT NOT NULL REFERENCES financial_years(id),
+          entry_type TEXT NOT NULL CHECK(entry_type IN ('expense','income')), entry_number TEXT NOT NULL, entry_date TEXT NOT NULL,
+          category TEXT NOT NULL, party_name TEXT, description TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),
+          payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),
+          reference TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,financial_year_id,entry_number)
+        ); CREATE INDEX IF NOT EXISTS financial_entries_date_idx ON financial_entries(company_id,entry_date,entry_type);
+        CREATE TRIGGER IF NOT EXISTS financial_entries_no_update BEFORE UPDATE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries are immutable.'); END;
+        CREATE TRIGGER IF NOT EXISTS financial_entries_no_delete BEFORE DELETE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries cannot be deleted.'); END;
+        UPDATE app_meta SET value='13' WHERE key='schema_version';`)
+      }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
         throw new Error('Backup has no valid active company.')
       }
-      const requiredTables = ['companies','customers','products','company_gstins','financial_years','company_tax_settings','vendors','sales_invoices','sales_invoice_items','purchase_bills','purchase_bill_items','purchase_payments','stock_movements','sales_receipts','audit_events']
+      const requiredTables = ['companies','customers','products','company_gstins','financial_years','company_tax_settings','vendors','sales_invoices','sales_invoice_items','purchase_bills','purchase_bill_items','purchase_payments','financial_entries','stock_movements','sales_receipts','audit_events']
       const actualTables = rows(candidate, "SELECT name FROM sqlite_master WHERE type='table'").map(item => item.name)
       if (!requiredTables.every(name => actualTables.includes(name))) throw new Error('Backup is missing required BIZORA data tables.')
       const previous = db
@@ -922,6 +962,47 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       if(!bill) return null
       bill.items=rows(db,'SELECT id,product_id,description,hsn_sac,quantity,unit_cost,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax FROM purchase_bill_items WHERE bill_id=? AND company_id=?',[bill.id,activeCompanyId])
       return bill
+    },
+    listFinancialEntries(entryType = null, limit = 200) {
+      const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 200)))
+      if (entryType && !['expense','income'].includes(entryType)) throw new Error('Choose expense or income entry type.')
+      const where = entryType ? ' AND entry_type=?' : ''
+      const params = entryType ? [activeCompanyId,entryType,safeLimit] : [activeCompanyId,safeLimit]
+      return rows(db,`SELECT id,entry_type,entry_number,entry_date,category,party_name,description,amount,payment_method,reference,created_at
+        FROM financial_entries WHERE company_id=?${where} ORDER BY entry_date DESC,created_at DESC LIMIT ?`,params)
+    },
+    getFinancialEntrySummary() {
+      const totals = rows(db,'SELECT entry_type,ROUND(SUM(amount),2) AS total FROM financial_entries WHERE company_id=? GROUP BY entry_type',[activeCompanyId])
+      const income = Number(totals.find(row=>row.entry_type==='income')?.total||0)
+      const expense = Number(totals.find(row=>row.entry_type==='expense')?.total||0)
+      return { income_total:income,expense_total:expense,net_total:Math.round((income-expense)*100)/100 }
+    },
+    createFinancialEntry(input = {}) {
+      const fy = rows(db,"SELECT id,start_date,end_date FROM financial_years WHERE company_id=? AND status='active'",[activeCompanyId])[0]
+      if (!fy) throw new Error('Create and activate a financial year before recording an expense or income.')
+      const entryType = requiredText(input.entryType ?? input.entry_type,'Entry type',20)
+      if (!['expense','income'].includes(entryType)) throw new Error('Entry type must be expense or income.')
+      const entryDate = requiredText(input.entryDate ?? input.entry_date,'Entry date',10)
+      if (!validISODate(entryDate)) throw new Error('Enter a valid entry date in YYYY-MM-DD format.')
+      if (entryDate < fy.start_date || entryDate > fy.end_date) throw new Error('Entry date must fall within the active financial year.')
+      const entryNumber = requiredText(input.entryNumber ?? input.entry_number,'Entry number',50)
+      const category = requiredText(input.category,'Category',80)
+      const description = requiredText(input.description,'Description',300)
+      const rawAmount = nonNegativeNumber(input.amount,'Amount')
+      const amountPaise = Math.round(rawAmount*100)
+      if (amountPaise <= 0) throw new Error('Amount must be at least ₹0.01.')
+      const paymentMethod = requiredText(input.paymentMethod ?? input.payment_method ?? 'cash','Payment method',30)
+      if (!['cash','upi','bank_transfer','cheque','card','other'].includes(paymentMethod)) throw new Error('Choose a supported payment method.')
+      const entry = { id:randomUUID(),company_id:activeCompanyId,financial_year_id:fy.id,entry_type:entryType,entry_number:entryNumber,
+        entry_date:entryDate,category,party_name:optionalText(input.partyName ?? input.party_name,'Party name',120),
+        description,amount:amountPaise/100,payment_method:paymentMethod,reference:optionalText(input.reference,'Reference',100),
+        created_at:new Date().toISOString() }
+      withTransaction(()=>{
+        run(db,'INSERT INTO financial_entries (id,company_id,financial_year_id,entry_type,entry_number,entry_date,category,party_name,description,amount,payment_method,reference,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [entry.id,entry.company_id,entry.financial_year_id,entry.entry_type,entry.entry_number,entry.entry_date,entry.category,entry.party_name,entry.description,entry.amount,entry.payment_method,entry.reference,entry.created_at])
+        recordAudit('financial_entry.created','financial_entry',entry.id,{entry_type:entryType,entry_number:entryNumber,amount:entry.amount,category})
+      })
+      return entry
     },
     getPayablesAging(asOfDate) {
       const bills = rows(db,`SELECT b.id,b.bill_number,b.bill_date,b.status,b.total_amount,
