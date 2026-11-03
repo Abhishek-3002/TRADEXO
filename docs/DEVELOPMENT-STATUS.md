@@ -2,7 +2,7 @@
 
 Updated: 2026-11-04
 
-Latest feature validation: GitHub Actions pull-request run 41695813418 passed on feature commit `e653035290cd193e5ff3c8c1348c248a881185a7` (website build, desktop build and all eleven database tests). A follow-up commit adds the same active-financial-year database constraint to legacy-backup upgrades; its CI is running.
+Latest feature validation: financial-year/GST milestone passed GitHub Actions run 41695978013. Sales/purchase/stock-ledger implementation is now in the branch; its latest test and build run is in progress after a test expectation correction.
 
 ## Verified baseline
 - Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
@@ -19,6 +19,11 @@ Latest feature validation: GitHub Actions pull-request run 41695813418 passed on
 - Multiple GSTIN registrations can be recorded per company; the app checks the 15-character format only and does not verify GST portal status.
 - Financial years can be created and switched per company; overlapping periods are rejected and the database enforces at most one active financial year per company.
 - Company-wise GST defaults include GST enabled/disabled, selected active GSTIN, inclusive/exclusive tax mode and place-of-supply state code; these are settings only, not a tax calculation engine.
+- Sales invoice drafts and supplier purchase bill drafts are company- and financial-year-scoped; posting requires an active financial year and valid company party/product records.
+- Posting a sales invoice writes negative stock movements after checking available stock; posting a purchase bill writes positive stock movements.
+- Posted sales and purchase documents can be reversed only with a reason; reversal writes compensating movements and never deletes original document or stock history.
+- Stock movement rows have database triggers preventing updates/deletes. Current stock is opening stock plus posted movements.
+- Draft creation and posting use database transactions; failed posting rolls back document and stock writes. Duplicate invoice/bill numbers are blocked per company and financial year.
 - Encrypted backups preserve financial year and company tax settings; version-3 backups are upgraded to the current schema during restore.
 - Existing single-company records are migrated into the first company when the database is upgraded.
 - Append-only audit events are written for company creation/switching and customer/product/GSTIN creation.
@@ -29,13 +34,14 @@ Latest feature validation: GitHub Actions pull-request run 41695813418 passed on
 - Encryption uses Electron safeStorage tied to the Windows OS account; cross-device/account recovery and tested recovery procedures are not implemented. Use synthetic data until Windows recovery tests are complete.
 - GSTIN format validation is not government verification or tax advice.
 - Product SKU uniqueness is scoped to each company by a schema migration; the migration and cross-company SKU test pass in CI.
-- Invoice posting, immutable stock ledger, tax calculations, role permissions, sync conflict resolution, license enforcement and signed updater are not complete.
+- GST/tax calculations, tax invoice PDF, payment/receivable ledgers, purchase accounting, role permissions, sync conflict resolution, license enforcement and signed updater are not complete.
+- Purchase bill and sales invoice reversal flows exist in the database API; customer-facing reversal UI and audit review screen are still pending.
 - SQL.js persists a complete database snapshot on each write; performance must be load-tested before larger deployments.
 - Windows installer and real Windows 10/11 installation have not yet been validated.
 
 ## Next milestones
-1. Add invoice and purchase workflows with transaction-safe posting, immutable stock movements and reversal (not deletion).
-2. Add tax calculation rules and invoice-level GSTIN/financial-year context with explicit validation and professional review.
+1. Complete invoice/purchase document UX, reversals, printable invoice/PDF and customer/vendor management.
+2. Add reviewed GST calculation rules and invoice-level GSTIN context with tax breakup and professional review.
 3. Add role permissions and enforce explicit company/GSTIN/financial-year selection before posting tax transactions.
 4. Test Windows encryption recovery, backup restore and crash recovery on Windows 10/11.
 5. Implement offline-first sync with idempotency, conflict handling and server-side authorization.
