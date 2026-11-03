@@ -338,7 +338,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const gstEnabled = input.gstEnabled === true || input.gstEnabled === 1 ? 1 : 0
       const taxMode = requiredText(input.defaultTaxMode || 'none', 'Tax mode', 20)
       if (!['none','exclusive','inclusive'].includes(taxMode)) throw new Error('Choose none, exclusive or inclusive tax mode.')
-      const stateCode = optionalText(input.placeOfSupplyStateCode, 'Place of supply state code', 2)
+      const stateCode = optionalText(input.placeOfSupplyStateCode, 'Place of supply state code', 10)
       if (stateCode && !/^\d{2}$/.test(stateCode)) throw new Error('State code must contain exactly two digits.')
       const gstinId = input.defaultGstinId ? requiredText(input.defaultGstinId, 'Default GSTIN ID', 80) : null
       if (gstEnabled && !gstinId) throw new Error('Select a GSTIN for GST-enabled settings.')
