@@ -34,6 +34,26 @@ CREATE TABLE IF NOT EXISTS company_gstins (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS company_gstins_company_idx ON company_gstins(company_id);
+CREATE TABLE IF NOT EXISTS financial_years (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL REFERENCES companies(id),
+  label TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')),
+  created_at TEXT NOT NULL,
+  UNIQUE(company_id, label),
+  CHECK (start_date <= end_date)
+);
+CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id, start_date);
+CREATE TABLE IF NOT EXISTS company_tax_settings (
+  company_id TEXT PRIMARY KEY REFERENCES companies(id),
+  gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK (gst_enabled IN (0,1)),
+  default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK (default_tax_mode IN ('none','exclusive','inclusive')),
+  place_of_supply_state_code TEXT,
+  default_gstin_id TEXT REFERENCES company_gstins(id),
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS customers (
   id TEXT PRIMARY KEY,
   company_id TEXT REFERENCES companies(id),
@@ -166,7 +186,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       COMMIT;
     `)
   }
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','3')")
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','4')")
 
   function persist() {
     if (!filePath) return
@@ -196,12 +216,15 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (version !== 3) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (version === 3) {
+        candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
+      }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
         throw new Error('Backup has no valid active company.')
       }
-      const requiredTables = ['companies','customers','products','company_gstins','audit_events']
+      const requiredTables = ['companies','customers','products','company_gstins','financial_years','company_tax_settings','audit_events']
       const actualTables = rows(candidate, "SELECT name FROM sqlite_master WHERE type='table'").map(item => item.name)
       if (!requiredTables.every(name => actualTables.includes(name))) throw new Error('Backup is missing required BIZORA data tables.')
       const previous = db
@@ -274,6 +297,59 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       recordAudit('company.gstin_added', 'company_gstin', registration.id, { company_id: companyId, gstin })
       persist()
       return registration
+    },
+    listFinancialYears(companyId = activeCompanyId) {
+      return rows(db, 'SELECT id,company_id,label,start_date,end_date,status,created_at FROM financial_years WHERE company_id=? ORDER BY start_date DESC', [companyId])
+    },
+    createFinancialYear(input = {}) {
+      const companyId = input.companyId ? requiredText(input.companyId, 'Company ID', 80) : activeCompanyId
+      if (!rows(db, "SELECT id FROM companies WHERE id=? AND status='active'", [companyId]).length) throw new Error('Active company was not found.')
+      const label = requiredText(input.label, 'Financial year label', 40)
+      const startDate = requiredText(input.startDate, 'Start date', 10)
+      const endDate = requiredText(input.endDate, 'End date', 10)
+      const validDate = value => /^\\d{4}-\\d{2}-\\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + 'T00:00:00Z')) && new Date(value + 'T00:00:00Z').toISOString().slice(0,10) === value
+      if (!validDate(startDate) || !validDate(endDate)) throw new Error('Enter valid dates in YYYY-MM-DD format.')
+      if (startDate > endDate) throw new Error('Financial year start date must be on or before its end date.')
+      const overlap = rows(db, 'SELECT label FROM financial_years WHERE company_id=? AND NOT(end_date < ? OR start_date > ?) LIMIT 1', [companyId, startDate, endDate])[0]
+      if (overlap) throw new Error('This date range overlaps financial year ' + overlap.label + '.')
+      const year = { id: randomUUID(), company_id: companyId, label, start_date: startDate, end_date: endDate, status: 'inactive', created_at: new Date().toISOString() }
+      run(db, 'INSERT INTO financial_years (id,company_id,label,start_date,end_date,status,created_at) VALUES (?,?,?,?,?,?,?)', [year.id, companyId, label, startDate, endDate, year.status, year.created_at])
+      recordAudit('financial_year.created', 'financial_year', year.id, { label, start_date: startDate, end_date: endDate })
+      persist()
+      return year
+    },
+    setActiveFinancialYear(yearId) {
+      const id = requiredText(yearId, 'Financial year ID', 80)
+      const year = rows(db, "SELECT id,company_id FROM financial_years WHERE id=? AND company_id=? AND status!='closed'", [id, activeCompanyId])[0]
+      if (!year) throw new Error('Financial year was not found or is closed.')
+      run(db, "UPDATE financial_years SET status='inactive' WHERE company_id=? AND status='active'", [activeCompanyId])
+      run(db, "UPDATE financial_years SET status='active' WHERE id=? AND company_id=?", [id, activeCompanyId])
+      recordAudit('financial_year.activated', 'financial_year', id, {})
+      persist()
+      return this.listFinancialYears().find(item => item.id === id)
+    },
+    getCompanyTaxSettings(companyId = activeCompanyId) {
+      return rows(db, 'SELECT company_id,gst_enabled,default_tax_mode,place_of_supply_state_code,default_gstin_id,updated_at FROM company_tax_settings WHERE company_id=?', [companyId])[0] || {
+        company_id: companyId, gst_enabled: 0, default_tax_mode: 'none', place_of_supply_state_code: null, default_gstin_id: null, updated_at: null
+      }
+    },
+    saveCompanyTaxSettings(input = {}) {
+      const gstEnabled = input.gstEnabled === true || input.gstEnabled === 1 ? 1 : 0
+      const taxMode = requiredText(input.defaultTaxMode || 'none', 'Tax mode', 20)
+      if (!['none','exclusive','inclusive'].includes(taxMode)) throw new Error('Choose none, exclusive or inclusive tax mode.')
+      const stateCode = optionalText(input.placeOfSupplyStateCode, 'Place of supply state code', 2)
+      if (stateCode && !/^\\d{2}$/.test(stateCode)) throw new Error('State code must contain exactly two digits.')
+      const gstinId = input.defaultGstinId ? requiredText(input.defaultGstinId, 'Default GSTIN ID', 80) : null
+      if (gstEnabled && !gstinId) throw new Error('Select a GSTIN for GST-enabled settings.')
+      if (gstinId && !rows(db, "SELECT id FROM company_gstins WHERE id=? AND company_id=? AND status='active'", [gstinId, activeCompanyId]).length) throw new Error('Selected GSTIN does not belong to the active company.')
+      if (gstEnabled && taxMode === 'none') throw new Error('Choose inclusive or exclusive tax mode when GST is enabled.')
+      const updatedAt = new Date().toISOString()
+      run(db, `INSERT INTO company_tax_settings (company_id,gst_enabled,default_tax_mode,place_of_supply_state_code,default_gstin_id,updated_at)
+        VALUES (?,?,?,?,?,?) ON CONFLICT(company_id) DO UPDATE SET gst_enabled=excluded.gst_enabled,default_tax_mode=excluded.default_tax_mode,place_of_supply_state_code=excluded.place_of_supply_state_code,default_gstin_id=excluded.default_gstin_id,updated_at=excluded.updated_at`,
+        [activeCompanyId, gstEnabled, taxMode, stateCode, gstinId, updatedAt])
+      recordAudit('company.tax_settings_updated', 'company', activeCompanyId, { gst_enabled: gstEnabled, default_tax_mode: taxMode, place_of_supply_state_code: stateCode })
+      persist()
+      return this.getCompanyTaxSettings()
     },
     createEncryptedBackup() {
       return backupSnapshot()
