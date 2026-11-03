@@ -45,11 +45,11 @@ function summarizeReceivables(invoices) {
     const total = amountInPaise(invoice.total_amount, 'Invoice total')
     const received = amountInPaise(invoice.received_amount ?? 0, 'Received amount')
     if (received > total) throw new Error('Received amount cannot exceed invoice total.')
-    summary.invoice_count += 1
-    summary.invoiced += total
-    summary.received += received
-    summary.outstanding += total - received
-    return summary
+    result.invoice_count += 1
+    result.invoiced += total
+    result.received += received
+    result.outstanding += total - received
+    return result
   }, { invoice_count: 0, invoiced: 0, received: 0, outstanding: 0 })
   return Object.fromEntries(Object.entries(summary).map(([key, value]) => [key, key === 'invoice_count' ? value : Number((value / 100).toFixed(2))]))
 }
