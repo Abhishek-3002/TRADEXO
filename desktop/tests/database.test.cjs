@@ -94,3 +94,11 @@ test('allows the same SKU in different companies but prevents duplicates within 
   assert.equal(db.listProducts().length, 1)
   db.close()
 })
+
+test('refuses to save a disk database without an encryption provider', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'bizora-no-plain-'))
+  const file = path.join(folder, 'bizora.sqlite')
+  await assert.rejects(() => openLocalDatabase(file), /encryption is required/)
+  assert.equal(fs.existsSync(file), false)
+  fs.rmSync(folder, { recursive: true, force: true })
+})
