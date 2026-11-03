@@ -2,7 +2,7 @@
 
 Updated: 2026-11-03
 
-Latest validation: GitHub Actions run 41693925721 passed (website build, desktop build and all six database tests).
+Latest validation: GitHub Actions run 41694354825 passed (website build, desktop build and all seven database tests).
 
 ## Verified baseline
 - Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
@@ -10,7 +10,7 @@ Latest validation: GitHub Actions run 41693925721 passed (website build, desktop
 - This repository is a development foundation, not a production-ready ERP.
 
 ## Offline data foundation
-- SQL.js database is stored in Electron's per-user application data folder.
+- SQL.js database is stored in Electron's per-user application data folder.\n- Database snapshots are encrypted through Electron safeStorage before disk writes; the app refuses plaintext disk writes if secure storage is unavailable. Earlier plaintext development databases are imported and rewritten in encrypted form on startup.
 - Narrow preload/IPC API; renderer receives no direct filesystem or SQL access.
 - Customer and product create/list screens use local storage.
 - Customer/product records are assigned to the active company and list queries are scoped to that company.
@@ -31,7 +31,7 @@ Latest validation: GitHub Actions run 41693925721 passed (website build, desktop
 ## Next milestones
 1. Pass CI for multi-company/GSTIN changes and test migration from the earlier single-company database.
 2. Add company-wise financial year/tax profile and GST tax settings.
-3. Implement backup/restore, encryption and crash-recovery tests before any real data.
+3. Implement backup/restore and crash-recovery tests before any real data.
 4. Add invoices and immutable sales/stock ledgers using transaction-safe posting and reversal (not deletion).
 5. Add role permissions and explicit company/GSTIN selection before tax transactions.
 6. Implement offline-first sync with idempotency, conflict handling and server-side authorization.
@@ -40,4 +40,4 @@ Latest validation: GitHub Actions run 41693925721 passed (website build, desktop
 9. Build and test a signed Windows installer on Windows 10/11.
 
 ## Release gate
-Do not publish a customer download or call the product production-ready until Windows installation, migration, backup/restore, encryption, security, tax and sync tests pass.
+Do not publish a customer download or call the product production-ready until Windows installation, migration, backup/restore, recovery, security, tax and sync tests pass.
