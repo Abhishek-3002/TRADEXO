@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS products (
   name TEXT NOT NULL,
   sku TEXT UNIQUE,
   hsn_sac TEXT,
+  default_tax_rate REAL NOT NULL DEFAULT 0 CHECK(default_tax_rate >= 0 AND default_tax_rate <= 100),
   unit TEXT NOT NULL DEFAULT 'pcs',
   selling_price REAL NOT NULL DEFAULT 0 CHECK (selling_price >= 0),
   opening_stock REAL NOT NULL DEFAULT 0 CHECK (opening_stock >= 0),
@@ -383,7 +384,11 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     const purchaseTaxColumns = { tax_rate:'REAL NOT NULL DEFAULT 0', taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0' }
     for (const [name, definition] of Object.entries(purchaseTaxColumns)) if (!purchaseItemColumns.includes(name)) db.exec(`ALTER TABLE purchase_bill_items ADD COLUMN ${name} ${definition}`)
   }
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','11')")
+  if (storedSchemaVersion < 12) {
+    const productColumns = rows(db, 'PRAGMA table_info(products)').map(column => column.name)
+    if (!productColumns.includes('default_tax_rate')) db.exec('ALTER TABLE products ADD COLUMN default_tax_rate REAL NOT NULL DEFAULT 0 CHECK(default_tax_rate >= 0 AND default_tax_rate <= 100)')
+  }
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','12')")
 
   function persist() {
     if (!filePath) return
@@ -414,7 +419,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6, 7, 8, 9, 10, 11].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -475,6 +480,11 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         const purchaseTaxColumns = { tax_rate:'REAL NOT NULL DEFAULT 0', taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0' }
         for (const [name, definition] of Object.entries(purchaseTaxColumns)) if (!purchaseItemColumns.includes(name)) candidate.exec(`ALTER TABLE purchase_bill_items ADD COLUMN ${name} ${definition}`)
         candidate.exec("UPDATE app_meta SET value='11' WHERE key='schema_version'")
+      }
+      if (version < 12) {
+        const productColumns = rows(candidate, 'PRAGMA table_info(products)').map(column => column.name)
+        if (!productColumns.includes('default_tax_rate')) candidate.exec('ALTER TABLE products ADD COLUMN default_tax_rate REAL NOT NULL DEFAULT 0 CHECK(default_tax_rate >= 0 AND default_tax_rate <= 100)')
+        candidate.exec("UPDATE app_meta SET value='12' WHERE key='schema_version'")
       }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
@@ -707,7 +717,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         const quantity = Number(item.quantity)
         if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 100000000) throw new Error('Item quantity must be greater than zero.')
         const unitPrice = nonNegativeNumber(item.unitPrice, 'Unit price')
-        const taxRate = settings.gst_enabled ? Number(item.taxRate ?? 0) : 0
+        const taxRate = settings.gst_enabled ? Number(item.taxRate ?? product.default_tax_rate ?? 0) : 0
         if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) throw new Error('GST rate must be between 0 and 100.')
         const description = optionalText(item.description, 'Item description', 180) || product.name
         const hsnSac = optionalText(item.hsnSac ?? item.hsn_sac ?? product.hsn_sac, 'HSN/SAC code', 8)
@@ -865,7 +875,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         const description=optionalText(item.description,'Item description',180)||product.name
         const hsnSac=optionalText(item.hsnSac ?? item.hsn_sac ?? product.hsn_sac,'HSN/SAC code',8)
         if(hsnSac && !/^(?:[0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8})$/.test(hsnSac)) throw new Error('HSN/SAC code must contain 2, 4, 6 or 8 digits.')
-        const taxRate=taxEnabled?Number(item.taxRate ?? 0):0
+        const taxRate=taxEnabled?Number(item.taxRate ?? product.default_tax_rate ?? 0):0
         if(!Number.isFinite(taxRate)||taxRate<0||taxRate>100) throw new Error('Purchase GST rate must be between 0 and 100.')
         return {product_id:productId,description,hsn_sac:hsnSac,quantity,unit_cost:unitCost,tax_rate:taxRate,taxMode,supplyType}
       })
@@ -1026,7 +1036,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     },
     listProducts(limit = 100) {
       const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 100)))
-      return rows(db, 'SELECT id,name,sku,hsn_sac,unit,selling_price,opening_stock,status,created_at FROM products WHERE company_id=? ORDER BY created_at DESC LIMIT ?', [activeCompanyId, safeLimit])
+      return rows(db, 'SELECT id,name,sku,hsn_sac,default_tax_rate,unit,selling_price,opening_stock,status,created_at FROM products WHERE company_id=? ORDER BY created_at DESC LIMIT ?', [activeCompanyId, safeLimit])
     },
     createProduct(input = {}) {
       const product = {
@@ -1035,14 +1045,16 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         name: requiredText(input.name, 'Product name'),
         sku: optionalText(input.sku, 'SKU', 60),
         hsn_sac: optionalText(input.hsnSac ?? input.hsn_sac, 'HSN/SAC code', 8),
+        default_tax_rate: nonNegativeNumber(input.defaultTaxRate ?? input.default_tax_rate ?? 0, 'Default GST rate'),
         unit: optionalText(input.unit, 'Unit', 20) || 'pcs',
         selling_price: nonNegativeNumber(input.sellingPrice, 'Selling price'),
         opening_stock: nonNegativeNumber(input.openingStock, 'Opening stock'),
         created_at: new Date().toISOString()
       }
       if (product.hsn_sac && !/^(?:[0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8})$/.test(product.hsn_sac)) throw new Error('HSN/SAC code must contain 2, 4, 6 or 8 digits.')
-      run(db, 'INSERT INTO products (id,company_id,name,sku,hsn_sac,unit,selling_price,opening_stock,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-        [product.id, product.company_id, product.name, product.sku, product.hsn_sac, product.unit, product.selling_price, product.opening_stock, product.created_at])
+      if (product.default_tax_rate > 100) throw new Error('Default GST rate must be between 0 and 100.')
+      run(db, 'INSERT INTO products (id,company_id,name,sku,hsn_sac,default_tax_rate,unit,selling_price,opening_stock,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+        [product.id, product.company_id, product.name, product.sku, product.hsn_sac, product.default_tax_rate, product.unit, product.selling_price, product.opening_stock, product.created_at])
       recordAudit('product.created', 'product', product.id, { name: product.name })
       persist()
       return product

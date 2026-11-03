@@ -113,11 +113,27 @@ test('stores GSTIN registrations against the selected company and validates form
   db.close()
 })
 
+test('uses product default GST rates for sales and purchase documents when a line rate is omitted', async () => {
+  const { db, customer, product } = await createTradingFixture()
+  const registration = db.addCompanyGstin({ gstin: '08ABCDE1234F1Z5', label: 'Buyer Rajasthan' })
+  db.saveCompanyTaxSettings({ gstEnabled: true, defaultTaxMode: 'exclusive', placeOfSupplyStateCode: '08', defaultGstinId: registration.id })
+  const invoice = db.createSalesInvoiceDraft({ customerId: customer.id, invoiceNumber: 'DEFAULT-TAX-SALE', invoiceDate: '2026-04-10', items: [{ productId: product.id, quantity: 1, unitPrice: 100 }] })
+  assert.equal(invoice.total_amount, 118)
+  assert.equal(db.getSalesInvoice(invoice.id).items[0].tax_rate, 18)
+  const vendor = db.createVendor({ name: 'Default GST Supplier', gstin: '08ABCDE1234F1Z5' })
+  const bill = db.createPurchaseBillDraft({ vendorId: vendor.id, billNumber: 'DEFAULT-TAX-PURCHASE', billDate: '2026-04-10', items: [{ productId: product.id, quantity: 1, unitCost: 100 }] })
+  assert.equal(bill.total_amount, 118)
+  assert.equal(db.getPurchaseBill(bill.id).items[0].tax_rate, 18)
+  db.close()
+})
+
 test('stores optional HSN/SAC codes and validates their digit length', async () => {
   const db = await openLocalDatabase()
-  const product = db.createProduct({ name: 'HSN Product', hsnSac: '30049099' })
+  const product = db.createProduct({ name: 'HSN Product', hsnSac: '30049099', defaultTaxRate: 18 })
   assert.equal(product.hsn_sac, '30049099')
   assert.equal(db.listProducts()[0].hsn_sac, '30049099')
+  assert.equal(db.listProducts()[0].default_tax_rate, 18)
+  assert.throws(() => db.createProduct({ name: 'Bad Rate', defaultTaxRate: 101 }), /Default GST rate/)
   assert.throws(() => db.createProduct({ name: 'Bad HSN', hsnSac: 'AB12' }), /HSN/)
   db.close()
 })
@@ -239,7 +255,7 @@ async function createTradingFixture() {
   const company = db.getCurrentCompany()
   const customer = db.createCustomer({ name: 'Test Buyer' })
   const vendor = db.createVendor({ name: 'Test Supplier' })
-  const product = db.createProduct({ name: 'Test Medicine', sku: 'MED-01', hsnSac: '30049099', sellingPrice: 50, openingStock: 0 })
+  const product = db.createProduct({ name: 'Test Medicine', sku: 'MED-01', hsnSac: '30049099', defaultTaxRate: 18, sellingPrice: 50, openingStock: 0 })
   const fy = db.createFinancialYear({ label: '2026-27', startDate: '2026-04-01', endDate: '2027-03-31' })
   db.setActiveFinancialYear(fy.id)
   return { db, company, customer, vendor, product, fy }

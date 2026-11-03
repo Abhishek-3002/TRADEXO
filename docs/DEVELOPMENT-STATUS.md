@@ -14,6 +14,10 @@ Latest validation: GitHub Actions run 41705333359 passed on commit `e284eeba4ee0
 - Fully paid and unposted bills are excluded; current, 1–30, 31–60, 61–90 and over-90-day buckets are calculated as of a selected date.
 - Since purchase bills do not yet have due-date fields, the report ages balances from bill date and labels this limitation in the UI.
 
+## Product default GST rate
+- Product catalogue can store a default GST rate (0–100%); invoice and purchase lines inherit it unless the user explicitly enters a line-specific rate.
+- Default tax rate is stored with the product and included in schema version 12 migrations and encrypted backup restore.
+
 ## Purchase-side GST
 - Vendor records can store and validate a supplier GSTIN; purchase bills use supplier state and active company place-of-supply state to calculate intra-state CGST/SGST or inter-state IGST.
 - Purchase bill and line records persist taxable value, tax split, GST rate, supplier GSTIN and supply type; registered vendor purchases use the shared paise-rounded tax engine.
