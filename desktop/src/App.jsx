@@ -44,7 +44,7 @@ function DataWorkspace({type}) {
    </form>
    <div className="panel db-list"><div className="panel-title"><b>{isCustomers?'Customer records':'Product records'}</b><button type="button" className="db-refresh" onClick={load}>Refresh</button></div>
     {loading?<p className="db-muted">Loading records…</p>:items.length===0?<p className="db-muted">No records yet. Add your first {isCustomers?'customer':'product'} above.</p>:
-     <div className="db-table-wrap"><table><thead><tr>{(isCustomers?['Name','Phone','Email','Address','Created']:['Product','SKU','HSN / SAC','Default GST %','Unit','Selling price','Opening stock']).map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{items.map(item=><tr key={item.id}>{(isCustomers?[item.name,item.phone,item.email,item.address,item.created_at?.slice(0,10)]:[item.name,item.sku,item.hsn_sac,item.default_tax_rate,item.unit,'₹'+Number(item.selling_price).toFixed(2),item.opening_stock]).map((v,i)=><td key={i}>{v||'—'}</td>)}</tr>)}</tbody></table></div>}
+     <div className="db-table-wrap"><table><thead><tr>{(isCustomers?['Name','Phone','Email','Address','Created']:['Product','SKU','Barcode','HSN / SAC','Default GST %','Unit','Selling price','Opening stock','Low-stock alert']).map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{items.map(item=><tr key={item.id}>{(isCustomers?[item.name,item.phone,item.email,item.address,item.created_at?.slice(0,10)]:[item.name,item.sku,item.barcode,item.hsn_sac,item.default_tax_rate,item.unit,'₹'+Number(item.selling_price).toFixed(2),item.opening_stock,item.low_stock_threshold]).map((v,i)=><td key={i}>{v||'—'}</td>)}</tr>)}</tbody></table></div>}
    </div>
   </>}
  </div>
