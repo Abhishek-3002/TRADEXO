@@ -3,32 +3,39 @@
 Updated: 2026-11-03
 
 ## Verified baseline
-- Website and Electron/Vite renderer production builds passed in GitHub Actions run 41691595285.
-- Rebranding is proposed on the `rename-to-bizora` branch and remains in an open pull request.
-- This repository is a starter foundation, not a production-ready ERP.
+- Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
+- Multi-company/GSTIN work is proposed on the `rename-to-bizora` branch in open PR #2; latest checks are running.
+- This repository is a development foundation, not a production-ready ERP.
 
-## Offline data foundation (current phase)
-- SQL.js database stored in the Electron app's per-user application data folder.
-- Initial local tables: company profile, customers, products and append-only audit events.
-- Narrow preload/IPC API; renderer does not receive direct filesystem or SQL access.
-- Initial automated tests cover create/list, persistence after reopen and validation.
-- No delete API is exposed for customer or product records.
+## Offline data foundation
+- SQL.js database is stored in Electron's per-user application data folder.
+- Narrow preload/IPC API; renderer receives no direct filesystem or SQL access.
+- Customer and product create/list screens use local storage.
+- Customer/product records are assigned to the active company and list queries are scoped to that company.
+- Multiple companies can be created and switched from Company Settings.
+- Multiple GSTIN registrations can be recorded per company; the app checks the 15-character format only and does not verify GST portal status.
+- Existing single-company records are migrated into the first company when the database is upgraded.
+- Append-only audit events are written for company creation/switching and customer/product/GSTIN creation.
+- No customer or product delete API is exposed.
 
 ## Known limitations — do not use for live business records yet
 - Database file is not encrypted at rest. Use only synthetic test data until encryption and recovery are implemented and reviewed.
-- No multi-company transaction context, invoice posting, stock ledger, GST calculations, sync conflict resolution, backup/restore, license enforcement or signed updater is complete.
-- The current dashboard is a preview and is not yet wired to all local database operations.
-- SQL.js persists a complete database snapshot on each write; this is suitable only for the starter dataset and must be load-tested before larger deployments.
+- GSTIN format validation is not government verification or tax advice.
+- Existing product SKU uniqueness is database-wide, not yet company-specific; a safe migration is still needed.
+- Invoice posting, immutable stock ledger, tax calculations, role permissions, backup/restore, sync conflict resolution, license enforcement and signed updater are not complete.
+- SQL.js persists a complete database snapshot on each write; performance must be load-tested before larger deployments.
+- Windows installer and real Windows 10/11 installation have not yet been validated.
 
 ## Next milestones
-1. Wire customer/product screens to the local database and add edit/archive workflows with audit history.
-2. Add invoices and immutable sales/stock ledgers using transaction-safe posting and reversal (not deletion).
-3. Add company/GSTIN isolation and role permissions.
-4. Implement backup/restore, database encryption and crash-recovery tests.
-5. Implement offline-first sync with idempotency, conflict handling and server-side authorization.
-6. Implement licensing, admin activation and signed automatic updates.
-7. Validate GST/e-invoice/e-way bill requirements with applicable official APIs and professional review.
-8. Build and test a signed Windows installer on Windows 10/11.
+1. Pass CI for multi-company/GSTIN changes and test migration from the earlier single-company database.
+2. Add a safe company-specific SKU migration and company-wise financial year/tax profile.
+3. Implement backup/restore, encryption and crash-recovery tests before any real data.
+4. Add invoices and immutable sales/stock ledgers using transaction-safe posting and reversal (not deletion).
+5. Add role permissions and explicit company/GSTIN selection before tax transactions.
+6. Implement offline-first sync with idempotency, conflict handling and server-side authorization.
+7. Implement licensing, admin activation and signed automatic updates.
+8. Validate GST/e-invoice/e-way bill requirements with applicable official APIs and professional review.
+9. Build and test a signed Windows installer on Windows 10/11.
 
 ## Release gate
-Do not publish a customer download or call the product production-ready until the Windows installer, database recovery, security, tax and sync tests pass.
+Do not publish a customer download or call the product production-ready until Windows installation, migration, backup/restore, encryption, security, tax and sync tests pass.
