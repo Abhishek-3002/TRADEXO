@@ -23,6 +23,22 @@ const testEncryption = {
 }
 const { openLocalDatabase } = require('../electron/database.cjs')
 
+test('records immutable stock adjustments, prevents negative balances and flags low stock', async () => {
+  const db = await openLocalDatabase()
+  const product = db.createProduct({name:'Stock Item',sku:'STK-01',sellingPrice:10,openingStock:5,lowStockThreshold:3})
+  const added = db.createStockAdjustment({productId:product.id,direction:'add',quantity:2,reason:'Physical count correction'})
+  assert.equal(added.balance,7)
+  const removed = db.createStockAdjustment({productId:product.id,direction:'remove',quantity:5,reason:'Damaged units'})
+  assert.equal(removed.balance,2)
+  assert.equal(db.getProductStock(product.id).current_stock,2)
+  assert.equal(db.listLowStockProducts()[0].id,product.id)
+  assert.equal(db.listStockMovements(product.id,10)[0].movement_type,'adjustment')
+  assert.throws(()=>db.createStockAdjustment({productId:product.id,direction:'remove',quantity:3,reason:'Would go negative'}),/make stock negative/)
+  assert.throws(()=>db.createStockAdjustment({productId:product.id,direction:'add',quantity:1,reason:' '}),/Adjustment reason is required/)
+  assert.throws(()=>db.createStockAdjustment({productId:product.id,direction:'add',quantity:0,reason:'Zero'}),/greater than zero/)
+  db.close()
+})
+
 test('creates customers and products and records append-only audit events', async () => {
   const db = await openLocalDatabase()
   const customer = db.createCustomer({ name: 'Test Customer', phone: '9876543210' })

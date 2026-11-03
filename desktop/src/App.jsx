@@ -9,7 +9,7 @@ function DataWorkspace({type}) {
  const [saving,setSaving] = useState(false)
  const [error,setError] = useState('')
  const [notice,setNotice] = useState('')
- const [form,setForm] = useState({name:'',phone:'',email:'',address:'',sku:'',hsnSac:'',defaultTaxRate:'0',unit:'pcs',sellingPrice:'0',openingStock:'0'})
+ const [form,setForm] = useState({name:'',phone:'',email:'',address:'',sku:'',barcode:'',hsnSac:'',defaultTaxRate:'0',lowStockThreshold:'0',unit:'pcs',sellingPrice:'0',openingStock:'0'})
  async function load() {
   if (!api) { setLoading(false); return }
   setLoading(true); setError('')
@@ -24,8 +24,8 @@ function DataWorkspace({type}) {
   setSaving(true); setError(''); setNotice('')
   try {
    if (isCustomers) await api.createCustomer({name:form.name,phone:form.phone,email:form.email,address:form.address})
-   else await api.createProduct({name:form.name,sku:form.sku,hsnSac:form.hsnSac,defaultTaxRate:form.defaultTaxRate,unit:form.unit,sellingPrice:form.sellingPrice,openingStock:form.openingStock})
-   setForm({name:'',phone:'',email:'',address:'',sku:'',hsnSac:'',defaultTaxRate:'0',unit:'pcs',sellingPrice:'0',openingStock:'0'})
+   else await api.createProduct({name:form.name,sku:form.sku,barcode:form.barcode,hsnSac:form.hsnSac,defaultTaxRate:form.defaultTaxRate,lowStockThreshold:form.lowStockThreshold,unit:form.unit,sellingPrice:form.sellingPrice,openingStock:form.openingStock})
+   setForm({name:'',phone:'',email:'',address:'',sku:'',barcode:'',hsnSac:'',defaultTaxRate:'0',lowStockThreshold:'0',unit:'pcs',sellingPrice:'0',openingStock:'0'})
    setNotice(isCustomers ? 'Customer saved on this PC.' : 'Product saved on this PC.')
    await load()
   } catch (e) { setError(e.message || 'Could not save this record.') }
@@ -37,7 +37,7 @@ function DataWorkspace({type}) {
   {!api ? <div className="panel db-empty"><LockKeyhole/><b>Open the BIZORA Windows desktop app</b><p>Local database access is available inside the Electron desktop app, not the browser preview.</p></div> : <>
    <form className="panel db-form" onSubmit={submit}><div className="panel-title"><b>{isCustomers?'Add customer':'Add product'}</b><span>Saved locally</span></div>
     <div className="db-fields">{field('name',isCustomers?'Customer name':'Product name')}
-     {isCustomers ? <>{field('phone','Phone number','Optional phone','tel')}{field('email','Email','Optional email','email')}{field('address','Address','Optional address')}</> : <>{field('sku','SKU / Code','Optional SKU')}{field('hsnSac','HSN / SAC code','2, 4, 6 or 8 digits')}{field('defaultTaxRate','Default GST rate (%)','0','number')}{field('unit','Unit','pcs')}{field('sellingPrice','Selling price','0','number')}{field('openingStock','Opening stock','0','number')}</>}
+     {isCustomers ? <>{field('phone','Phone number','Optional phone','tel')}{field('email','Email','Optional email','email')}{field('address','Address','Optional address')}</> : <>{field('sku','SKU / Code','Optional SKU')}{field('barcode','Barcode','Optional barcode')}{field('hsnSac','HSN / SAC code','2, 4, 6 or 8 digits')}{field('defaultTaxRate','Default GST rate (%)','0','number')}{field('lowStockThreshold','Low-stock alert at quantity','0','number')}{field('unit','Unit','pcs')}{field('sellingPrice','Selling price','0','number')}{field('openingStock','Opening stock','0','number')}</>}
     </div>
     {error&&<p className="db-error">{error}</p>}{notice&&<p className="db-success">{notice}</p>}
     <button className="db-save" disabled={saving}>{saving?'Saving…':isCustomers?'Save customer':'Save product'}</button>
@@ -164,11 +164,19 @@ function ReportsWorkspace(){return <><ReceivablesAgingWorkspace/><PayablesAgingW
 
 function WarehouseWorkspace(){
  const api=typeof window!=='undefined'?window.bizora?.database:null
- const [stock,setStock]=useState([]),[moves,setMoves]=useState([])
- async function load(){if(!api)return;const p=await api.listProducts();setStock(await Promise.all(p.map(x=>api.getProductStock(x.id))));setMoves(await api.listStockMovements(null,200))}
- useEffect(()=>{load().catch(()=>{})},[])
+ const [stock,setStock]=useState([]),[moves,setMoves]=useState([]),[low,setLow]=useState([])
+ const [productId,setProductId]=useState(''),[direction,setDirection]=useState('add'),[quantity,setQuantity]=useState(''),[reason,setReason]=useState('')
+ const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false)
+ async function load(){if(!api)return;const p=await api.listProducts();const [balances,movements,alerts]=await Promise.all([Promise.all(p.map(x=>api.getProductStock(x.id))),api.listStockMovements(null,200),api.listLowStockProducts(200)]);setStock(balances);setMoves(movements);setLow(alerts);if(!productId&&p[0])setProductId(p[0].id)}
+ useEffect(()=>{load().catch(e=>setError(e.message||'Could not load warehouse.'))},[])
+ async function save(e){e.preventDefault();setBusy(true);setError('');setNotice('');try{await api.createStockAdjustment({productId,direction,quantity,reason});setQuantity('');setReason('');await load();setNotice('Stock adjustment saved to the permanent ledger.')}catch(e){setError(e.message||'Could not adjust stock.')}finally{setBusy(false)}}
  if(!api)return <div className="panel db-empty"><LockKeyhole/><b>Open BIZORA desktop app</b></div>
- return <div className="db-workspace"><div className="db-heading"><div><h2>Warehouse &amp; Stock Ledger</h2><p>Opening stock plus posted purchase and sales movements.</p></div><span className="db-count">{stock.length} products</span></div><div className="panel db-list"><div className="panel-title"><b>Current stock</b><button className="db-refresh" onClick={()=>load()}>Refresh</button></div><div className="db-table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Balance</th></tr></thead><tbody>{stock.map(x=><tr key={x.id}><td>{x.name}</td><td>{x.sku||'—'}</td><td>{x.current_stock}</td></tr>)}</tbody></table></div></div><div className="panel db-list"><div className="panel-title"><b>Movement history</b><span>{moves.length} entries</span></div><div className="db-table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Type</th><th>Qty change</th></tr></thead><tbody>{moves.map(m=><tr key={m.id}><td>{m.created_at.slice(0,10)}</td><td>{m.product_name}</td><td>{m.movement_type}</td><td>{m.quantity_delta>0?'+':''}{m.quantity_delta}</td></tr>)}</tbody></table></div></div></div>
+ return <div className="db-workspace"><div className="db-heading"><div><h2>Warehouse &amp; Stock Ledger</h2><p>Opening stock, purchases, sales, reversals and manual adjustments.</p></div><span className="db-count">{stock.length} products</span></div>
+ <div className="stats aging-stats"><div><small>Products tracked</small><b>{stock.length}</b></div><div><small>Low-stock alerts</small><b>{low.length}</b></div><div><small>Ledger movements</small><b>{moves.length}</b></div></div>
+ <form className="panel db-form" onSubmit={save}><div className="panel-title"><b>Manual stock adjustment</b><span>Reason required · no negative stock allowed</span></div><div className="db-fields"><label className="db-field">Product<select required value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Select product</option>{stock.map(p=><option key={p.id} value={p.id}>{p.name} · Available {p.current_stock} {p.unit}</option>)}</select></label><label className="db-field">Adjustment<select value={direction} onChange={e=>setDirection(e.target.value)}><option value="add">Add stock</option><option value="remove">Remove stock</option></select></label><label className="db-field">Quantity<input type="number" min="0.0001" step="any" required value={quantity} onChange={e=>setQuantity(e.target.value)}/></label><label className="db-field">Reason<input required maxLength="240" value={reason} onChange={e=>setReason(e.target.value)} placeholder="Opening correction, damaged goods…"/></label></div>{error&&<p className="db-error">{error}</p>}{notice&&<p className="db-success">{notice}</p>}<button className="db-save" disabled={busy||!productId}>{busy?'Saving…':'Save stock adjustment'}</button></form>
+ <div className="panel db-list"><div className="panel-title"><b>Low-stock alerts</b><span>Only products with an alert threshold set</span></div>{low.length===0?<p className="db-muted">No low-stock alerts. Set a threshold in Products &amp; Stock to monitor a product.</p>:<div className="db-table-wrap"><table><thead><tr><th>Product</th><th>Current stock</th><th>Alert at</th><th>Unit</th></tr></thead><tbody>{low.map(x=><tr key={x.id}><td>{x.name}</td><td>{x.current_stock}</td><td>{x.low_stock_threshold}</td><td>{x.unit}</td></tr>)}</tbody></table></div>}</div>
+ <div className="panel db-list"><div className="panel-title"><b>Current stock</b><button type="button" className="db-refresh" onClick={()=>load()}>Refresh</button></div><div className="db-table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Balance</th></tr></thead><tbody>{stock.map(x=><tr key={x.id}><td>{x.name}</td><td>{x.sku||'—'}</td><td>{x.current_stock}</td></tr>)}</tbody></table></div></div>
+ <div className="panel db-list"><div className="panel-title"><b>Movement history</b><span>{moves.length} entries</span></div><div className="db-table-wrap"><table><thead><tr><th>Date</th><th>Product</th><th>Type</th><th>Qty change</th></tr></thead><tbody>{moves.map(m=><tr key={m.id}><td>{m.created_at.slice(0,10)}</td><td>{m.product_name}</td><td>{m.movement_type}</td><td>{m.quantity_delta>0?'+':''}{m.quantity_delta}</td></tr>)}</tbody></table></div></div></div>
 }
 
 function CompanyWorkspace(){

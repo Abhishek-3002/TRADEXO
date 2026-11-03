@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('bizora', Object.freeze({
     reversePurchaseBill: (id, reason) => ipcRenderer.invoke('db:purchases:reverse', id, reason),
     listStockMovements: (productId, limit) => ipcRenderer.invoke('db:stock:movements', productId, limit),
     getProductStock: productId => ipcRenderer.invoke('db:stock:product', productId),
+    createStockAdjustment: input => ipcRenderer.invoke('db:stock:adjust', input),
+    listLowStockProducts: limit => ipcRenderer.invoke('db:stock:low', limit),
     createBackup: () => ipcRenderer.invoke('db:backup:create'),
     restoreBackup: () => ipcRenderer.invoke('db:backup:restore')
   })

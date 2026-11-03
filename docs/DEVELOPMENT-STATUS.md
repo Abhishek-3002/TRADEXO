@@ -69,6 +69,11 @@ Latest validation: GitHub Actions run 41707453670 passed on commit `ae3d55926f68
 - Encrypted backup export and validated restore are available from the desktop Data Backup screen. Restore requires confirmation, validates encryption, SQLite integrity, schema version and required tables, and leaves current data intact if validation fails.
 - No customer or product delete API is exposed.
 
+## Warehouse stock controls
+- Warehouse supports reason-coded add/remove stock adjustments stored in the immutable stock movement ledger; removal cannot drive available stock below zero.
+- Products support an optional low-stock threshold; company-scoped alerts list products at or below that threshold.
+- Schema version 14 upgrades stock movement constraints without deleting prior movements and adds barcode and threshold product fields; encrypted backup restore also migrates to the current schema.
+
 ## Known limitations — do not use for live business records yet
 - Encryption uses Electron safeStorage tied to the Windows OS account; cross-device/account recovery and tested recovery procedures are not implemented. Use synthetic data until Windows recovery tests are complete.
 - GSTIN format validation is not government verification or tax advice. GST calculation requires the user to choose the applicable rate for each invoice line and correctly configure seller GSTIN and place-of-supply state; calculations are not a substitute for a tax professional's review.

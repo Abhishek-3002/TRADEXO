@@ -60,6 +60,8 @@ function registerDatabaseHandlers() {
   ipcMain.handle('db:purchases:reverse', (_event, id, reason) => localDb.reversePurchaseBill(id, reason))
   ipcMain.handle('db:stock:movements', (_event, productId, limit) => localDb.listStockMovements(productId, limit))
   ipcMain.handle('db:stock:product', (_event, productId) => localDb.getProductStock(productId))
+  ipcMain.handle('db:stock:adjust', (_event, input) => localDb.createStockAdjustment(input))
+  ipcMain.handle('db:stock:low', (_event, limit) => localDb.listLowStockProducts(limit))
   ipcMain.handle('db:backup:create', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showSaveDialog(win, {

@@ -82,8 +82,10 @@ CREATE TABLE IF NOT EXISTS products (
   company_id TEXT REFERENCES companies(id),
   name TEXT NOT NULL,
   sku TEXT UNIQUE,
+  barcode TEXT,
   hsn_sac TEXT,
   default_tax_rate REAL NOT NULL DEFAULT 0 CHECK(default_tax_rate >= 0 AND default_tax_rate <= 100),
+  low_stock_threshold REAL NOT NULL DEFAULT 0 CHECK(low_stock_threshold >= 0),
   unit TEXT NOT NULL DEFAULT 'pcs',
   selling_price REAL NOT NULL DEFAULT 0 CHECK (selling_price >= 0),
   opening_stock REAL NOT NULL DEFAULT 0 CHECK (opening_stock >= 0),
@@ -237,8 +239,8 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   id TEXT PRIMARY KEY,
   company_id TEXT NOT NULL REFERENCES companies(id),
   product_id TEXT NOT NULL REFERENCES products(id),
-  movement_type TEXT NOT NULL CHECK(movement_type IN ('sale','purchase','sale_reversal','purchase_reversal')),
-  reference_type TEXT NOT NULL CHECK(reference_type IN ('sales_invoice','purchase_bill')),
+  movement_type TEXT NOT NULL CHECK(movement_type IN ('sale','purchase','sale_reversal','purchase_reversal','adjustment')),
+  reference_type TEXT NOT NULL CHECK(reference_type IN ('sales_invoice','purchase_bill','stock_adjustment')),
   reference_id TEXT NOT NULL,
   reference_item_id TEXT NOT NULL,
   quantity_delta REAL NOT NULL CHECK(quantity_delta != 0),
@@ -416,7 +418,28 @@ async function openLocalDatabase(filePath = null, encryption = null) {
   ); CREATE INDEX IF NOT EXISTS financial_entries_date_idx ON financial_entries(company_id,entry_date,entry_type);
   CREATE TRIGGER IF NOT EXISTS financial_entries_no_update BEFORE UPDATE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries are immutable.'); END;
   CREATE TRIGGER IF NOT EXISTS financial_entries_no_delete BEFORE DELETE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries cannot be deleted.'); END;`)
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','13')")
+  if (storedSchemaVersion < 14) {
+    const productColumns = rows(db, 'PRAGMA table_info(products)').map(column => column.name)
+    if (!productColumns.includes('barcode')) db.exec('ALTER TABLE products ADD COLUMN barcode TEXT')
+    if (!productColumns.includes('low_stock_threshold')) db.exec('ALTER TABLE products ADD COLUMN low_stock_threshold REAL NOT NULL DEFAULT 0 CHECK(low_stock_threshold >= 0)')
+    db.exec(`BEGIN TRANSACTION;
+      CREATE TABLE stock_movements_migrating (
+        id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), product_id TEXT NOT NULL REFERENCES products(id),
+        movement_type TEXT NOT NULL CHECK(movement_type IN ('sale','purchase','sale_reversal','purchase_reversal','adjustment')),
+        reference_type TEXT NOT NULL CHECK(reference_type IN ('sales_invoice','purchase_bill','stock_adjustment')),
+        reference_id TEXT NOT NULL, reference_item_id TEXT NOT NULL, quantity_delta REAL NOT NULL CHECK(quantity_delta != 0),
+        unit_cost REAL NOT NULL DEFAULT 0 CHECK(unit_cost >= 0), created_at TEXT NOT NULL,
+        UNIQUE(reference_type, reference_item_id, movement_type)
+      );
+      INSERT INTO stock_movements_migrating SELECT * FROM stock_movements;
+      DROP TABLE stock_movements;
+      ALTER TABLE stock_movements_migrating RENAME TO stock_movements;
+      CREATE INDEX stock_movements_product_idx ON stock_movements(company_id,product_id,created_at);
+      CREATE TRIGGER stock_movements_no_update BEFORE UPDATE ON stock_movements BEGIN SELECT RAISE(ABORT,'Stock ledger entries are immutable.'); END;
+      CREATE TRIGGER stock_movements_no_delete BEFORE DELETE ON stock_movements BEGIN SELECT RAISE(ABORT,'Stock ledger entries cannot be deleted.'); END;
+      COMMIT;`)
+  }
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','14')")
 
   function persist() {
     if (!filePath) return
@@ -447,7 +470,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -525,6 +548,28 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         CREATE TRIGGER IF NOT EXISTS financial_entries_no_update BEFORE UPDATE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries are immutable.'); END;
         CREATE TRIGGER IF NOT EXISTS financial_entries_no_delete BEFORE DELETE ON financial_entries BEGIN SELECT RAISE(ABORT,'Financial entries cannot be deleted.'); END;
         UPDATE app_meta SET value='13' WHERE key='schema_version';`)
+      }
+      if (version < 14) {
+        const productColumns = rows(candidate, 'PRAGMA table_info(products)').map(column => column.name)
+        if (!productColumns.includes('barcode')) candidate.exec('ALTER TABLE products ADD COLUMN barcode TEXT')
+        if (!productColumns.includes('low_stock_threshold')) candidate.exec('ALTER TABLE products ADD COLUMN low_stock_threshold REAL NOT NULL DEFAULT 0 CHECK(low_stock_threshold >= 0)')
+        candidate.exec(`BEGIN TRANSACTION;
+          CREATE TABLE stock_movements_migrating (
+            id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), product_id TEXT NOT NULL REFERENCES products(id),
+            movement_type TEXT NOT NULL CHECK(movement_type IN ('sale','purchase','sale_reversal','purchase_reversal','adjustment')),
+            reference_type TEXT NOT NULL CHECK(reference_type IN ('sales_invoice','purchase_bill','stock_adjustment')),
+            reference_id TEXT NOT NULL, reference_item_id TEXT NOT NULL, quantity_delta REAL NOT NULL CHECK(quantity_delta != 0),
+            unit_cost REAL NOT NULL DEFAULT 0 CHECK(unit_cost >= 0), created_at TEXT NOT NULL,
+            UNIQUE(reference_type, reference_item_id, movement_type)
+          );
+          INSERT INTO stock_movements_migrating SELECT * FROM stock_movements;
+          DROP TABLE stock_movements;
+          ALTER TABLE stock_movements_migrating RENAME TO stock_movements;
+          CREATE INDEX stock_movements_product_idx ON stock_movements(company_id,product_id,created_at);
+          CREATE TRIGGER stock_movements_no_update BEFORE UPDATE ON stock_movements BEGIN SELECT RAISE(ABORT,'Stock ledger entries are immutable.'); END;
+          CREATE TRIGGER stock_movements_no_delete BEFORE DELETE ON stock_movements BEGIN SELECT RAISE(ABORT,'Stock ledger entries cannot be deleted.'); END;
+          UPDATE app_meta SET value='14' WHERE key='schema_version';
+          COMMIT;`)
       }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
@@ -1072,6 +1117,34 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       if(productId) return rows(db,`SELECT sm.*,p.name AS product_name FROM stock_movements sm JOIN products p ON p.id=sm.product_id WHERE sm.company_id=? AND sm.product_id=? ORDER BY sm.created_at DESC LIMIT ?`,[activeCompanyId,requiredText(productId,'Product ID',80),safeLimit])
       return rows(db,`SELECT sm.*,p.name AS product_name FROM stock_movements sm JOIN products p ON p.id=sm.product_id WHERE sm.company_id=? ORDER BY sm.created_at DESC LIMIT ?`,[activeCompanyId,safeLimit])
     },
+    createStockAdjustment(input = {}) {
+      const productId = requiredText(input.productId ?? input.product_id,'Product ID',80)
+      const product = rows(db,"SELECT id,name,opening_stock FROM products WHERE id=? AND company_id=? AND status='active'",[productId,activeCompanyId])[0]
+      if (!product) throw new Error('Active product was not found in the current company.')
+      const direction = requiredText(input.direction,'Adjustment direction',10)
+      if (!['add','remove'].includes(direction)) throw new Error('Choose add or remove stock.')
+      const quantity = nonNegativeNumber(input.quantity,'Adjustment quantity')
+      if (quantity <= 0) throw new Error('Adjustment quantity must be greater than zero.')
+      const reason = requiredText(input.reason,'Adjustment reason',240)
+      const delta = direction==='add'?quantity:-quantity
+      return withTransaction(()=>{
+        const current = Number(rows(db,'SELECT p.opening_stock+COALESCE(SUM(sm.quantity_delta),0) AS stock FROM products p LEFT JOIN stock_movements sm ON sm.product_id=p.id AND sm.company_id=p.company_id WHERE p.id=? AND p.company_id=? GROUP BY p.id',[productId,activeCompanyId])[0]?.stock||0)
+        if (current+delta < -0.000001) throw new Error('Adjustment would make stock negative. Available: '+current+'.')
+        const id=randomUUID(), at=new Date().toISOString()
+        run(db,'INSERT INTO stock_movements (id,company_id,product_id,movement_type,reference_type,reference_id,reference_item_id,quantity_delta,unit_cost,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',[id,activeCompanyId,productId,'adjustment','stock_adjustment',id,id,delta,0,at])
+        recordAudit('stock.adjusted','stock_adjustment',id,{product_id:productId,product_name:product.name,direction,quantity,reason,balance:current+delta})
+        return {id,product_id:productId,product_name:product.name,direction,quantity,quantity_delta:delta,reason,balance:current+delta,created_at:at}
+      })
+    },
+    listLowStockProducts(limit = 200) {
+      const safeLimit=Math.max(1,Math.min(500,Math.floor(Number(limit)||200)))
+      return rows(db,`SELECT p.id,p.name,p.sku,p.unit,p.low_stock_threshold,
+        p.opening_stock+COALESCE(SUM(sm.quantity_delta),0) AS current_stock
+        FROM products p LEFT JOIN stock_movements sm ON sm.product_id=p.id AND sm.company_id=p.company_id
+        WHERE p.company_id=? AND p.status='active' AND p.low_stock_threshold>0
+        GROUP BY p.id HAVING current_stock<=p.low_stock_threshold
+        ORDER BY current_stock ASC,p.name ASC LIMIT ?`,[activeCompanyId,safeLimit])
+    },
     getProductStock(productId) {
       const id=requiredText(productId,'Product ID',80)
       const result=rows(db,`SELECT p.id,p.name,p.sku,p.unit,p.opening_stock + COALESCE(SUM(sm.quantity_delta),0) AS current_stock
@@ -1117,7 +1190,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     },
     listProducts(limit = 100) {
       const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 100)))
-      return rows(db, 'SELECT id,name,sku,hsn_sac,default_tax_rate,unit,selling_price,opening_stock,status,created_at FROM products WHERE company_id=? ORDER BY created_at DESC LIMIT ?', [activeCompanyId, safeLimit])
+      return rows(db, 'SELECT id,name,sku,barcode,hsn_sac,default_tax_rate,unit,selling_price,opening_stock,low_stock_threshold,status,created_at FROM products WHERE company_id=? ORDER BY created_at DESC LIMIT ?', [activeCompanyId, safeLimit])
     },
     createProduct(input = {}) {
       const product = {
@@ -1125,8 +1198,10 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         company_id: activeCompanyId,
         name: requiredText(input.name, 'Product name'),
         sku: optionalText(input.sku, 'SKU', 60),
+        barcode: optionalText(input.barcode, 'Barcode', 80),
         hsn_sac: optionalText(input.hsnSac ?? input.hsn_sac, 'HSN/SAC code', 8),
         default_tax_rate: nonNegativeNumber(input.defaultTaxRate ?? input.default_tax_rate ?? 0, 'Default GST rate'),
+        low_stock_threshold: nonNegativeNumber(input.lowStockThreshold ?? input.low_stock_threshold ?? 0, 'Low-stock threshold'),
         unit: optionalText(input.unit, 'Unit', 20) || 'pcs',
         selling_price: nonNegativeNumber(input.sellingPrice, 'Selling price'),
         opening_stock: nonNegativeNumber(input.openingStock, 'Opening stock'),
@@ -1134,8 +1209,8 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       }
       if (product.hsn_sac && !/^(?:[0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8})$/.test(product.hsn_sac)) throw new Error('HSN/SAC code must contain 2, 4, 6 or 8 digits.')
       if (product.default_tax_rate > 100) throw new Error('Default GST rate must be between 0 and 100.')
-      run(db, 'INSERT INTO products (id,company_id,name,sku,hsn_sac,default_tax_rate,unit,selling_price,opening_stock,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-        [product.id, product.company_id, product.name, product.sku, product.hsn_sac, product.default_tax_rate, product.unit, product.selling_price, product.opening_stock, product.created_at])
+      run(db, 'INSERT INTO products (id,company_id,name,sku,barcode,hsn_sac,default_tax_rate,unit,selling_price,opening_stock,low_stock_threshold,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+        [product.id, product.company_id, product.name, product.sku, product.barcode, product.hsn_sac, product.default_tax_rate, product.unit, product.selling_price, product.opening_stock, product.low_stock_threshold, product.created_at])
       recordAudit('product.created', 'product', product.id, { name: product.name })
       persist()
       return product
