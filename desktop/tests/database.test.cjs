@@ -245,6 +245,27 @@ async function createTradingFixture() {
   return { db, company, customer, vendor, product, fy }
 }
 
+test('purchase GST records intra-state CGST/SGST and inter-state IGST', async () => {
+  const { db, product } = await createTradingFixture()
+  const registration = db.addCompanyGstin({ gstin: '08ABCDE1234F1Z5', label: 'Buyer Rajasthan' })
+  db.saveCompanyTaxSettings({ gstEnabled: true, defaultTaxMode: 'exclusive', placeOfSupplyStateCode: '08', defaultGstinId: registration.id })
+  const localVendor = db.createVendor({ name: 'Local GST Supplier', gstin: '08ABCDE1234F1Z5' })
+  const localBill = db.createPurchaseBillDraft({ vendorId: localVendor.id, billNumber: 'GST-PB-LOCAL', billDate: '2026-04-10', items: [{ productId: product.id, quantity: 1, unitCost: 100, taxRate: 18 }] })
+  assert.equal(localBill.total_amount, 118)
+  assert.equal(localBill.cgst, 9)
+  assert.equal(localBill.sgst, 9)
+  assert.equal(localBill.igst, 0)
+  db.postPurchaseBill(localBill.id)
+  const interstateVendor = db.createVendor({ name: 'Interstate GST Supplier', gstin: '27ABCDE1234F1Z5' })
+  const interstateBill = db.createPurchaseBillDraft({ vendorId: interstateVendor.id, billNumber: 'GST-PB-INTER', billDate: '2026-04-11', items: [{ productId: product.id, quantity: 1, unitCost: 100, taxRate: 18 }] })
+  assert.equal(interstateBill.total_amount, 118)
+  assert.equal(interstateBill.cgst, 0)
+  assert.equal(interstateBill.sgst, 0)
+  assert.equal(interstateBill.igst, 18)
+  assert.equal(db.getPurchaseBill(interstateBill.id).items[0].tax_rate, 18)
+  db.close()
+})
+
 test('supplier payments track purchase bill balances, support partial payment and reject overpayment', async () => {
   const { db, vendor, product } = await createTradingFixture()
   const bill = db.createPurchaseBillDraft({ vendorId: vendor.id, billNumber: 'PAY-TEST-01', billDate: '2026-04-10', items: [{ productId: product.id, quantity: 4, unitCost: 25 }] })
