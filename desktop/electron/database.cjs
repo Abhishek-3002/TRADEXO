@@ -205,13 +205,20 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const actualTables = rows(candidate, "SELECT name FROM sqlite_master WHERE type='table'").map(item => item.name)
       if (!requiredTables.every(name => actualTables.includes(name))) throw new Error('Backup is missing required BIZORA data tables.')
       const previous = db
+      const previousActiveCompanyId = activeCompanyId
       db = candidate
-      candidate = null
       activeCompanyId = selected
-      recordAudit('database.restored', 'database', 'local', {})
-      persist()
+      try {
+        recordAudit('database.restored', 'database', 'local', {})
+        persist()
+      } catch (error) {
+        db = previous
+        activeCompanyId = previousActiveCompanyId
+        throw error
+      }
+      candidate = null
       previous.close()
-      return { restored: true, company: this.getCurrentCompany() }
+      return { restored: true, company: rows(db, 'SELECT id,business_name,legal_name,currency,status,created_at FROM companies WHERE id=?', [activeCompanyId])[0] || null }
     } catch (error) {
       if (candidate) candidate.close()
       throw new Error('Backup restore failed: ' + error.message)
