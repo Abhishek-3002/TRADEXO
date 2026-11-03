@@ -13,7 +13,7 @@ test('groups outstanding invoices into aging buckets', () => {
   assert.deepEqual(result, {
     as_of_date: '2026-11-04',
     outstanding_total: 1380,
-    buckets: { current: 80, days_1_30: 200, days_31_60: 200, days_61_90: 200, days_over_90: 900 }
+    buckets: { current: 80, days_1_30: 200, days_31_60: 200, days_61_90: 400, days_over_90: 500 }
   })
 })
 
