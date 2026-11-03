@@ -179,6 +179,45 @@ async function openLocalDatabase(filePath = null, encryption = null) {
   }
   if (filePath) persist() // encrypt fresh databases and transparently upgrade older plaintext development files
 
+  function backupSnapshot() {
+    if (!encryption || typeof encryption.encrypt !== 'function') throw new Error('Database encryption is unavailable.')
+    return Buffer.concat([encryptedPrefix, Buffer.from(encryption.encrypt(Buffer.from(db.export())))])
+  }
+
+  function restoreSnapshot(snapshot) {
+    if (!Buffer.isBuffer(snapshot) || snapshot.length < encryptedPrefix.length + 32 || snapshot.length > 500 * 1024 * 1024) {
+      throw new Error('Backup file is invalid or exceeds the 500 MB limit.')
+    }
+    if (!snapshot.subarray(0, encryptedPrefix.length).equals(encryptedPrefix)) throw new Error('This is not a supported BIZORA encrypted backup.')
+    if (!encryption || typeof encryption.decrypt !== 'function') throw new Error('Database decryption is unavailable.')
+    let candidate
+    try {
+      candidate = new SQL.Database(new Uint8Array(encryption.decrypt(snapshot.subarray(encryptedPrefix.length))))
+      const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
+      if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
+      const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
+      if (version !== 3) throw new Error('Backup version is not supported by this BIZORA build.')
+      const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
+      if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
+        throw new Error('Backup has no valid active company.')
+      }
+      const requiredTables = ['companies','customers','products','company_gstins','audit_events']
+      const actualTables = rows(candidate, "SELECT name FROM sqlite_master WHERE type='table'").map(item => item.name)
+      if (!requiredTables.every(name => actualTables.includes(name))) throw new Error('Backup is missing required BIZORA data tables.')
+      const previous = db
+      db = candidate
+      candidate = null
+      activeCompanyId = selected
+      recordAudit('database.restored', 'database', 'local', {})
+      persist()
+      previous.close()
+      return { restored: true, company: this.getCurrentCompany() }
+    } catch (error) {
+      if (candidate) candidate.close()
+      throw new Error('Backup restore failed: ' + error.message)
+    }
+  }
+
   function recordAudit(eventType, entityType, entityId, details) {
     run(db, 'INSERT INTO audit_events (id,event_type,entity_type,entity_id,details_json,created_at) VALUES (?,?,?,?,?,?)',
       [randomUUID(), eventType, entityType, entityId, JSON.stringify(details), new Date().toISOString()])
@@ -228,6 +267,12 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       recordAudit('company.gstin_added', 'company_gstin', registration.id, { company_id: companyId, gstin })
       persist()
       return registration
+    },
+    createEncryptedBackup() {
+      return backupSnapshot()
+    },
+    restoreEncryptedBackup(snapshot) {
+      return restoreSnapshot(snapshot)
     },
     getSummary() {
       const result = rows(db, `SELECT
