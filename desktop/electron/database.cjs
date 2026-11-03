@@ -104,6 +104,16 @@ CREATE TABLE IF NOT EXISTS sales_invoices (
   UNIQUE(company_id, financial_year_id, invoice_number)
 );
 CREATE INDEX IF NOT EXISTS sales_invoices_company_date_idx ON sales_invoices(company_id,invoice_date);
+CREATE TABLE IF NOT EXISTS sales_receipts (
+  id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id),
+  invoice_id TEXT NOT NULL REFERENCES sales_invoices(id), receipt_number TEXT NOT NULL,
+  receipt_date TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),
+  payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),
+  reference TEXT, notes TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,receipt_number)
+);
+CREATE INDEX IF NOT EXISTS sales_receipts_invoice_idx ON sales_receipts(company_id,invoice_id,receipt_date);
+CREATE TRIGGER IF NOT EXISTS sales_receipts_no_update BEFORE UPDATE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts are immutable.'); END;
+CREATE TRIGGER IF NOT EXISTS sales_receipts_no_delete BEFORE DELETE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts cannot be deleted.'); END;
 CREATE TABLE IF NOT EXISTS sales_invoice_items (
   id TEXT PRIMARY KEY,
   invoice_id TEXT NOT NULL REFERENCES sales_invoices(id),
@@ -271,7 +281,9 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       COMMIT;
     `)
   }
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','5')")
+  // Version 6 adds an append-only customer receipt ledger.
+  if (storedSchemaVersion < 6) db.exec("CREATE TABLE IF NOT EXISTS sales_receipts (\n  id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id),\n  invoice_id TEXT NOT NULL REFERENCES sales_invoices(id), receipt_number TEXT NOT NULL,\n  receipt_date TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),\n  payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),\n  reference TEXT, notes TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,receipt_number)\n);\nCREATE INDEX IF NOT EXISTS sales_receipts_invoice_idx ON sales_receipts(company_id,invoice_id,receipt_date);\nCREATE TRIGGER IF NOT EXISTS sales_receipts_no_update BEFORE UPDATE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts are immutable.'); END;\nCREATE TRIGGER IF NOT EXISTS sales_receipts_no_delete BEFORE DELETE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts cannot be deleted.'); END;");
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','6')")
 
   function persist() {
     if (!filePath) return
@@ -302,7 +314,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -316,11 +328,12 @@ async function openLocalDatabase(filePath = null, encryption = null) {
           CREATE TRIGGER IF NOT EXISTS stock_movements_no_update BEFORE UPDATE ON stock_movements BEGIN SELECT RAISE(ABORT,'Stock ledger entries are immutable.'); END; CREATE TRIGGER IF NOT EXISTS stock_movements_no_delete BEFORE DELETE ON stock_movements BEGIN SELECT RAISE(ABORT,'Stock ledger entries cannot be deleted.'); END;
           UPDATE app_meta SET value='5' WHERE key='schema_version';`)
       }
+      if (version < 6) { candidate.exec("CREATE TABLE IF NOT EXISTS sales_receipts (\n  id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id),\n  invoice_id TEXT NOT NULL REFERENCES sales_invoices(id), receipt_number TEXT NOT NULL,\n  receipt_date TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),\n  payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),\n  reference TEXT, notes TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,receipt_number)\n);\nCREATE INDEX IF NOT EXISTS sales_receipts_invoice_idx ON sales_receipts(company_id,invoice_id,receipt_date);\nCREATE TRIGGER IF NOT EXISTS sales_receipts_no_update BEFORE UPDATE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts are immutable.'); END;\nCREATE TRIGGER IF NOT EXISTS sales_receipts_no_delete BEFORE DELETE ON sales_receipts BEGIN SELECT RAISE(ABORT,'Payment receipts cannot be deleted.'); END;\nUPDATE app_meta SET value='6' WHERE key='schema_version';"); }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
         throw new Error('Backup has no valid active company.')
       }
-      const requiredTables = ['companies','customers','products','company_gstins','financial_years','company_tax_settings','vendors','sales_invoices','sales_invoice_items','purchase_bills','purchase_bill_items','stock_movements','audit_events']
+      const requiredTables = ['companies','customers','products','company_gstins','financial_years','company_tax_settings','vendors','sales_invoices','sales_invoice_items','purchase_bills','purchase_bill_items','stock_movements','sales_receipts','audit_events']
       const actualTables = rows(candidate, "SELECT name FROM sqlite_master WHERE type='table'").map(item => item.name)
       if (!requiredTables.every(name => actualTables.includes(name))) throw new Error('Backup is missing required BIZORA data tables.')
       const previous = db
@@ -479,7 +492,11 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     },
     listSalesInvoices(limit = 100) {
       const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 100)))
-      return rows(db, `SELECT i.id,i.invoice_number,i.invoice_date,i.due_date,i.status,i.total_amount,i.created_at,c.name AS customer_name,fy.label AS financial_year
+      return rows(db, `SELECT i.id,i.invoice_number,i.invoice_date,i.due_date,i.status,i.total_amount,i.created_at,c.name AS customer_name,fy.label AS financial_year,
+        COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0) AS received_amount,
+        ROUND(i.total_amount-COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0),2) AS outstanding_amount,
+        CASE WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)<=0 THEN 'unpaid'
+          WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)>=i.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
         FROM sales_invoices i JOIN customers c ON c.id=i.customer_id JOIN financial_years fy ON fy.id=i.financial_year_id
         WHERE i.company_id=? ORDER BY i.invoice_date DESC,i.created_at DESC LIMIT ?`, [activeCompanyId,safeLimit])
     },
@@ -521,11 +538,49 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       return invoice
     },
     getSalesInvoice(invoiceId) {
-      const invoice = rows(db, `SELECT i.*,c.name AS customer_name,fy.label AS financial_year FROM sales_invoices i
-        JOIN customers c ON c.id=i.customer_id JOIN financial_years fy ON fy.id=i.financial_year_id WHERE i.id=? AND i.company_id=?`, [requiredText(invoiceId,'Invoice ID',80),activeCompanyId])[0]
+      const invoice = rows(db, `SELECT i.*,c.name AS customer_name,fy.label AS financial_year,
+        COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0) AS received_amount,
+        ROUND(i.total_amount-COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0),2) AS outstanding_amount,
+        CASE WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)<=0 THEN 'unpaid'
+          WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)>=i.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
+        FROM sales_invoices i JOIN customers c ON c.id=i.customer_id JOIN financial_years fy ON fy.id=i.financial_year_id WHERE i.id=? AND i.company_id=?`, [requiredText(invoiceId,'Invoice ID',80),activeCompanyId])[0]
       if (!invoice) return null
       invoice.items = rows(db, 'SELECT id,product_id,description,quantity,unit_price,line_total FROM sales_invoice_items WHERE invoice_id=? AND company_id=?', [invoice.id,activeCompanyId])
       return invoice
+    },
+    listSalesReceipts(invoiceId = null, limit = 200) {
+      const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 200)))
+      if (invoiceId) return rows(db, `SELECT r.*,i.invoice_number,c.name AS customer_name FROM sales_receipts r
+        JOIN sales_invoices i ON i.id=r.invoice_id AND i.company_id=r.company_id JOIN customers c ON c.id=i.customer_id
+        WHERE r.company_id=? AND r.invoice_id=? ORDER BY r.receipt_date DESC,r.created_at DESC LIMIT ?`,
+        [activeCompanyId, requiredText(invoiceId,'Invoice ID',80), safeLimit])
+      return rows(db, `SELECT r.*,i.invoice_number,c.name AS customer_name FROM sales_receipts r
+        JOIN sales_invoices i ON i.id=r.invoice_id AND i.company_id=r.company_id JOIN customers c ON c.id=i.customer_id
+        WHERE r.company_id=? ORDER BY r.receipt_date DESC,r.created_at DESC LIMIT ?`, [activeCompanyId,safeLimit])
+    },
+    recordSalesReceipt(input = {}) {
+      const invoiceId = requiredText(input.invoiceId, 'Invoice ID', 80)
+      const invoice = rows(db, "SELECT id,invoice_number,total_amount,status FROM sales_invoices WHERE id=? AND company_id=?", [invoiceId,activeCompanyId])[0]
+      if (!invoice) throw new Error('Invoice was not found in the active company.')
+      if (invoice.status !== 'posted') throw new Error('Only a posted invoice can receive a payment.')
+      const receiptDate = requiredText(input.receiptDate, 'Receipt date', 10)
+      if (!validISODate(receiptDate)) throw new Error('Enter a valid receipt date in YYYY-MM-DD format.')
+      const amount = Math.round(nonNegativeNumber(input.amount,'Receipt amount')*100)/100
+      if (amount <= 0) throw new Error('Receipt amount must be greater than zero.')
+      const paymentMethod = requiredText(input.paymentMethod || 'cash','Payment method',20)
+      if (!['cash','upi','bank_transfer','cheque','card','other'].includes(paymentMethod)) throw new Error('Choose a supported payment method.')
+      const receiptNumber = requiredText(input.receiptNumber,'Receipt number',50)
+      const reference = optionalText(input.reference,'Payment reference',100)
+      const notes = optionalText(input.notes,'Receipt notes',500)
+      const alreadyReceived = Number(rows(db,'SELECT COALESCE(SUM(amount),0) AS total FROM sales_receipts WHERE invoice_id=? AND company_id=?',[invoiceId,activeCompanyId])[0]?.total || 0)
+      const outstanding = Math.round((Number(invoice.total_amount)-alreadyReceived)*100)/100
+      if (amount > outstanding + 0.000001) throw new Error('Receipt exceeds outstanding balance of ₹' + outstanding.toFixed(2) + '.')
+      const receipt = { id:randomUUID(),company_id:activeCompanyId,invoice_id:invoiceId,receipt_number:receiptNumber,receipt_date:receiptDate,amount,payment_method:paymentMethod,reference,notes,created_at:new Date().toISOString() }
+      withTransaction(()=>{
+        run(db,'INSERT INTO sales_receipts (id,company_id,invoice_id,receipt_number,receipt_date,amount,payment_method,reference,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',[receipt.id,receipt.company_id,receipt.invoice_id,receipt.receipt_number,receipt.receipt_date,receipt.amount,receipt.payment_method,receipt.reference,receipt.notes,receipt.created_at])
+        recordAudit('sales_receipt.recorded','sales_receipt',receipt.id,{invoice_id:invoiceId,receipt_number:receiptNumber,amount,payment_method:paymentMethod})
+      })
+      return { ...receipt, invoice_number:invoice.invoice_number, received_amount:Math.round((alreadyReceived+amount)*100)/100, outstanding_amount:Math.round((outstanding-amount)*100)/100, payment_status:outstanding-amount<=0.000001?'paid':'part_paid' }
     },
     postSalesInvoice(invoiceId) {
       const id = requiredText(invoiceId,'Invoice ID',80)
