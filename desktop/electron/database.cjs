@@ -712,7 +712,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const taxMode = settings.gst_enabled ? settings.default_tax_mode : 'none'
       const rawItems = input.items.map(item => {
         const productId = requiredText(item.productId, 'Product', 80)
-        const product = rows(db, "SELECT id,name,unit,hsn_sac FROM products WHERE id=? AND company_id=? AND status='active'", [productId,activeCompanyId])[0]
+        const product = rows(db, "SELECT id,name,unit,hsn_sac,default_tax_rate FROM products WHERE id=? AND company_id=? AND status='active'", [productId,activeCompanyId])[0]
         if (!product) throw new Error('An invoice product does not belong to the active company or is inactive.')
         const quantity = Number(item.quantity)
         if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 100000000) throw new Error('Item quantity must be greater than zero.')
@@ -867,7 +867,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const taxMode = taxEnabled ? settings.default_tax_mode : 'none'
       const rawItems = input.items.map(item=>{
         const productId=requiredText(item.productId,'Product',80)
-        const product=rows(db,"SELECT id,name,hsn_sac FROM products WHERE id=? AND company_id=? AND status='active'",[productId,activeCompanyId])[0]
+        const product=rows(db,"SELECT id,name,hsn_sac,default_tax_rate FROM products WHERE id=? AND company_id=? AND status='active'",[productId,activeCompanyId])[0]
         if(!product) throw new Error('A purchase product does not belong to the active company or is inactive.')
         const quantity=Number(item.quantity)
         if(!Number.isFinite(quantity)||quantity<=0||quantity>100000000) throw new Error('Item quantity must be greater than zero.')
