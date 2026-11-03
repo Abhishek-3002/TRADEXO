@@ -103,13 +103,23 @@ function run(db, sql, params = []) {
   try { statement.run(params) } finally { statement.free() }
 }
 
-async function openLocalDatabase(filePath = null) {
+async function openLocalDatabase(filePath = null, encryption = null) {
   const initSqlJs = require('sql.js')
   const wasmDirectory = path.dirname(require.resolve('sql.js'))
   const SQL = await initSqlJs({ locateFile: file => path.join(wasmDirectory, file) })
   let db
+  let importedLegacyPlaintext = false
+  const encryptedPrefix = Buffer.from('BIZORA_DB_ENC_V1\\n')
   if (filePath && fs.existsSync(filePath)) {
-    db = new SQL.Database(new Uint8Array(fs.readFileSync(filePath)))
+    const stored = fs.readFileSync(filePath)
+    if (stored.subarray(0, encryptedPrefix.length).equals(encryptedPrefix)) {
+      if (!encryption || typeof encryption.decrypt !== 'function') throw new Error('BIZORA database encryption is unavailable; refusing to open encrypted data.')
+      db = new SQL.Database(new Uint8Array(encryption.decrypt(stored.subarray(encryptedPrefix.length))))
+    } else {
+      // One-time compatibility import for the earlier plaintext development database.
+      db = new SQL.Database(new Uint8Array(stored))
+      importedLegacyPlaintext = true
+    }
   } else {
     db = new SQL.Database()
   }
@@ -162,11 +172,15 @@ async function openLocalDatabase(filePath = null) {
 
   function persist() {
     if (!filePath) return
+    if (!encryption || typeof encryption.encrypt !== 'function') throw new Error('BIZORA database encryption is required before saving local data.')
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     const temporaryPath = filePath + '.tmp'
-    fs.writeFileSync(temporaryPath, Buffer.from(db.export()))
+    const encrypted = Buffer.concat([encryptedPrefix, Buffer.from(encryption.encrypt(Buffer.from(db.export())))])
+    fs.writeFileSync(temporaryPath, encrypted, { mode: 0o600 })
     fs.renameSync(temporaryPath, filePath)
   }
+  if (filePath) persist() // encrypt fresh databases and transparently upgrade older plaintext development files
+
   function recordAudit(eventType, entityType, entityId, details) {
     run(db, 'INSERT INTO audit_events (id,event_type,entity_type,entity_id,details_json,created_at) VALUES (?,?,?,?,?,?)',
       [randomUUID(), eventType, entityType, entityId, JSON.stringify(details), new Date().toISOString()])
