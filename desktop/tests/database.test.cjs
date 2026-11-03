@@ -284,6 +284,45 @@ test('rejects impossible invoice, due and supplier bill dates', async () => {
 })
 
 
+
+test('calculates and persists intra-state CGST and SGST on sales invoices', async () => {
+  const { db, customer, product } = await createTradingFixture()
+  const registration = db.addCompanyGstin({ gstin: '08ABCDE1234F1Z5', label: 'Rajasthan GSTIN' })
+  db.saveCompanyTaxSettings({ gstEnabled: true, defaultTaxMode: 'exclusive', placeOfSupplyStateCode: '08', defaultGstinId: registration.id })
+  const invoice = db.createSalesInvoiceDraft({ customerId: customer.id, invoiceNumber: 'GST-INTRA-1', invoiceDate: '2026-04-12', items: [{ productId: product.id, quantity: 2, unitPrice: 100, taxRate: 18 }] })
+  assert.equal(invoice.taxable_value, 200)
+  assert.equal(invoice.cgst, 18)
+  assert.equal(invoice.sgst, 18)
+  assert.equal(invoice.igst, 0)
+  assert.equal(invoice.total_tax, 36)
+  assert.equal(invoice.total_amount, 236)
+  assert.equal(invoice.supply_type, 'intra')
+  const saved = db.getSalesInvoice(invoice.id)
+  assert.equal(saved.items[0].tax_rate, 18)
+  assert.equal(saved.items[0].taxable_value, 200)
+  assert.equal(saved.items[0].cgst, 18)
+  assert.equal(saved.seller_gstin, '08ABCDE1234F1Z5')
+  db.close()
+})
+
+test('calculates inter-state IGST and inclusive GST invoice totals', async () => {
+  const { db, customer, product } = await createTradingFixture()
+  const registration = db.addCompanyGstin({ gstin: '08ABCDE1234F1Z5', label: 'Rajasthan GSTIN' })
+  db.saveCompanyTaxSettings({ gstEnabled: true, defaultTaxMode: 'exclusive', placeOfSupplyStateCode: '27', defaultGstinId: registration.id })
+  const interstate = db.createSalesInvoiceDraft({ customerId: customer.id, invoiceNumber: 'GST-INTER-1', invoiceDate: '2026-04-12', items: [{ productId: product.id, quantity: 1, unitPrice: 100, taxRate: 18 }] })
+  assert.equal(interstate.supply_type, 'inter')
+  assert.equal(interstate.cgst, 0)
+  assert.equal(interstate.sgst, 0)
+  assert.equal(interstate.igst, 18)
+  assert.equal(interstate.total_amount, 118)
+  db.saveCompanyTaxSettings({ gstEnabled: true, defaultTaxMode: 'inclusive', placeOfSupplyStateCode: '08', defaultGstinId: registration.id })
+  const inclusive = db.createSalesInvoiceDraft({ customerId: customer.id, invoiceNumber: 'GST-INCLUSIVE-1', invoiceDate: '2026-04-12', items: [{ productId: product.id, quantity: 1, unitPrice: 118, taxRate: 18 }] })
+  assert.equal(inclusive.taxable_value, 100)
+  assert.equal(inclusive.total_tax, 18)
+  assert.equal(inclusive.total_amount, 118)
+  db.close()
+})
+
 test('records append-only customer receipts and calculates paid, part-paid and outstanding balances', async () => {
   const { db, vendor, customer, product } = await createTradingFixture()
   const purchase = db.createPurchaseBillDraft({ vendorId: vendor.id, billNumber: 'RCPT-PB-1', billDate: '2026-04-10', items: [{ productId: product.id, quantity: 10, unitCost: 10 }] })
