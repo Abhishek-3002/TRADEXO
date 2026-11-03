@@ -1,0 +1,48 @@
+name: Project 521 build checks
+
+on:
+  push:
+    branches:
+      - main
+      - rename-to-bizora
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  website-build:
+    name: Website production build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install website dependencies
+        working-directory: website
+        run: npm install
+      - name: Build website
+        working-directory: website
+        run: npm run build
+
+  desktop-build:
+    name: Desktop renderer production build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install
+      - name: Build desktop renderer
+        working-directory: desktop
+        run: npm run build
