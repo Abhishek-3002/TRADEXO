@@ -95,8 +95,6 @@ CREATE TABLE IF NOT EXISTS vendors (
   name TEXT NOT NULL,
   phone TEXT,
   address TEXT,
-  gstin TEXT,
-  state_code TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived')),
   created_at TEXT NOT NULL
 );
@@ -163,15 +161,6 @@ CREATE TABLE IF NOT EXISTS purchase_bills (
   bill_date TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','posted','reversed')),
   total_amount REAL NOT NULL CHECK(total_amount >= 0),
-  taxable_value REAL NOT NULL DEFAULT 0 CHECK(taxable_value >= 0),
-  cgst REAL NOT NULL DEFAULT 0 CHECK(cgst >= 0),
-  sgst REAL NOT NULL DEFAULT 0 CHECK(sgst >= 0),
-  igst REAL NOT NULL DEFAULT 0 CHECK(igst >= 0),
-  total_tax REAL NOT NULL DEFAULT 0 CHECK(total_tax >= 0),
-  tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(tax_mode IN ('none','exclusive','inclusive')),
-  supply_type TEXT NOT NULL DEFAULT 'intra' CHECK(supply_type IN ('intra','inter')),
-  place_of_supply_state_code TEXT,
-  supplier_gstin TEXT,
   notes TEXT,
   created_at TEXT NOT NULL,
   posted_at TEXT,
@@ -187,13 +176,7 @@ CREATE TABLE IF NOT EXISTS purchase_bill_items (
   hsn_sac TEXT,
   quantity REAL NOT NULL CHECK(quantity > 0),
   unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
-  line_total REAL NOT NULL CHECK(line_total >= 0),
-  tax_rate REAL NOT NULL DEFAULT 0 CHECK(tax_rate >= 0 AND tax_rate <= 100),
-  taxable_value REAL NOT NULL DEFAULT 0 CHECK(taxable_value >= 0),
-  cgst REAL NOT NULL DEFAULT 0 CHECK(cgst >= 0),
-  sgst REAL NOT NULL DEFAULT 0 CHECK(sgst >= 0),
-  igst REAL NOT NULL DEFAULT 0 CHECK(igst >= 0),
-  total_tax REAL NOT NULL DEFAULT 0 CHECK(total_tax >= 0)
+  line_total REAL NOT NULL CHECK(line_total >= 0)
 );
 CREATE INDEX IF NOT EXISTS purchase_bill_items_bill_idx ON purchase_bill_items(bill_id);
 CREATE TABLE IF NOT EXISTS purchase_payments (
@@ -371,18 +354,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     const purchaseItemColumns = rows(db, 'PRAGMA table_info(purchase_bill_items)').map(column => column.name)
     if (!purchaseItemColumns.includes('hsn_sac')) db.exec('ALTER TABLE purchase_bill_items ADD COLUMN hsn_sac TEXT')
   }
-  if (storedSchemaVersion < 11) {
-    const vendorColumns = rows(db, 'PRAGMA table_info(vendors)').map(column => column.name)
-    if (!vendorColumns.includes('gstin')) db.exec('ALTER TABLE vendors ADD COLUMN gstin TEXT')
-    if (!vendorColumns.includes('state_code')) db.exec('ALTER TABLE vendors ADD COLUMN state_code TEXT')
-    const billColumns = rows(db, 'PRAGMA table_info(purchase_bills)').map(column => column.name)
-    const billTaxColumns = { taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0', tax_mode:"TEXT NOT NULL DEFAULT 'none'", supply_type:"TEXT NOT NULL DEFAULT 'intra'", place_of_supply_state_code:'TEXT', supplier_gstin:'TEXT' }
-    for (const [name, definition] of Object.entries(billTaxColumns)) if (!billColumns.includes(name)) db.exec(`ALTER TABLE purchase_bills ADD COLUMN ${name} ${definition}`)
-    const purchaseItemColumns = rows(db, 'PRAGMA table_info(purchase_bill_items)').map(column => column.name)
-    const purchaseTaxColumns = { tax_rate:'REAL NOT NULL DEFAULT 0', taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0' }
-    for (const [name, definition] of Object.entries(purchaseTaxColumns)) if (!purchaseItemColumns.includes(name)) db.exec(`ALTER TABLE purchase_bill_items ADD COLUMN ${name} ${definition}`)
-  }
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','11')")
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','10')")
 
   function persist() {
     if (!filePath) return
@@ -413,7 +385,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6, 7, 8, 9, 10, 11].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7, 8, 9, 10].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -462,18 +434,6 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         const purchaseItemColumns = rows(candidate, 'PRAGMA table_info(purchase_bill_items)').map(column => column.name)
         if (!purchaseItemColumns.includes('hsn_sac')) candidate.exec('ALTER TABLE purchase_bill_items ADD COLUMN hsn_sac TEXT')
         candidate.exec("UPDATE app_meta SET value='10' WHERE key='schema_version'")
-      }
-      if (version < 11) {
-        const vendorColumns = rows(candidate, 'PRAGMA table_info(vendors)').map(column => column.name)
-        if (!vendorColumns.includes('gstin')) candidate.exec('ALTER TABLE vendors ADD COLUMN gstin TEXT')
-        if (!vendorColumns.includes('state_code')) candidate.exec('ALTER TABLE vendors ADD COLUMN state_code TEXT')
-        const billColumns = rows(candidate, 'PRAGMA table_info(purchase_bills)').map(column => column.name)
-        const billTaxColumns = { taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0', tax_mode:"TEXT NOT NULL DEFAULT 'none'", supply_type:"TEXT NOT NULL DEFAULT 'intra'", place_of_supply_state_code:'TEXT', supplier_gstin:'TEXT' }
-        for (const [name, definition] of Object.entries(billTaxColumns)) if (!billColumns.includes(name)) candidate.exec(`ALTER TABLE purchase_bills ADD COLUMN ${name} ${definition}`)
-        const purchaseItemColumns = rows(candidate, 'PRAGMA table_info(purchase_bill_items)').map(column => column.name)
-        const purchaseTaxColumns = { tax_rate:'REAL NOT NULL DEFAULT 0', taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0' }
-        for (const [name, definition] of Object.entries(purchaseTaxColumns)) if (!purchaseItemColumns.includes(name)) candidate.exec(`ALTER TABLE purchase_bill_items ADD COLUMN ${name} ${definition}`)
-        candidate.exec("UPDATE app_meta SET value='11' WHERE key='schema_version'")
       }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
@@ -651,16 +611,12 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     },
     listVendors(limit = 100) {
       const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 100)))
-      return rows(db, "SELECT id,name,phone,address,gstin,state_code,status,created_at FROM vendors WHERE company_id=? AND status='active' ORDER BY created_at DESC LIMIT ?", [activeCompanyId, safeLimit])
+      return rows(db, "SELECT id,name,phone,address,status,created_at FROM vendors WHERE company_id=? AND status='active' ORDER BY created_at DESC LIMIT ?", [activeCompanyId, safeLimit])
     },
     createVendor(input = {}) {
-      const gstin = optionalText(input.gstin, 'Vendor GSTIN', 15)?.toUpperCase() || null
-      if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) throw new Error('Enter a valid 15-character vendor GSTIN format.')
       const vendor = { id: randomUUID(), company_id: activeCompanyId, name: requiredText(input.name, 'Vendor name'),
-        phone: optionalText(input.phone, 'Phone', 30), address: optionalText(input.address, 'Address', 500),
-        gstin, state_code: gstin ? gstin.slice(0,2) : null, created_at: new Date().toISOString() }
-      run(db, 'INSERT INTO vendors (id,company_id,name,phone,address,gstin,state_code,created_at) VALUES (?,?,?,?,?,?,?,?)',
-        [vendor.id,vendor.company_id,vendor.name,vendor.phone,vendor.address,vendor.gstin,vendor.state_code,vendor.created_at])
+        phone: optionalText(input.phone, 'Phone', 30), address: optionalText(input.address, 'Address', 500), created_at: new Date().toISOString() }
+      run(db, 'INSERT INTO vendors (id,company_id,name,phone,address,created_at) VALUES (?,?,?,?,?,?)', [vendor.id,vendor.company_id,vendor.name,vendor.phone,vendor.address,vendor.created_at])
       recordAudit('vendor.created', 'vendor', vendor.id, { name: vendor.name })
       persist()
       return vendor
@@ -838,23 +794,10 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       if (!validISODate(billDate)) throw new Error('Enter a valid supplier bill date in YYYY-MM-DD format.')
       if (billDate < fy.start_date || billDate > fy.end_date) throw new Error('Bill date must fall within the active financial year.')
       const vendorId = requiredText(input.vendorId,'Vendor',80)
-      const vendor = rows(db,"SELECT id,name,gstin,state_code FROM vendors WHERE id=? AND company_id=? AND status='active'",[vendorId,activeCompanyId])[0]
-      if (!vendor) throw new Error('Select a vendor from the active company.')
+      if (!rows(db,"SELECT id FROM vendors WHERE id=? AND company_id=? AND status='active'",[vendorId,activeCompanyId]).length) throw new Error('Select a vendor from the active company.')
       const billNumber = requiredText(input.billNumber,'Supplier bill number',50)
       if (!Array.isArray(input.items) || input.items.length<1 || input.items.length>100) throw new Error('Add between 1 and 100 purchase items.')
-      const settings = this.getCompanyTaxSettings()
-      const buyerRegistration = settings.default_gstin_id
-        ? rows(db,"SELECT gstin,state_code FROM company_gstins WHERE id=? AND company_id=? AND status='active'",[settings.default_gstin_id,activeCompanyId])[0]
-        : null
-      if (settings.gst_enabled && !buyerRegistration) throw new Error('Select an active company GSTIN in Company GST settings before recording a GST purchase.')
-      const placeState = settings.place_of_supply_state_code || buyerRegistration?.state_code || null
-      if (settings.gst_enabled && !placeState) throw new Error('Set the company place-of-supply state code in Company GST settings.')
-      const taxEnabled = Boolean(settings.gst_enabled && vendor.gstin)
-      const supplyType = taxEnabled && vendor.state_code && placeState
-        ? (vendor.state_code === placeState ? 'intra' : 'inter')
-        : 'intra'
-      const taxMode = taxEnabled ? settings.default_tax_mode : 'none'
-      const rawItems = input.items.map(item=>{
+      const items=input.items.map(item=>{
         const productId=requiredText(item.productId,'Product',80)
         const product=rows(db,"SELECT id,name,hsn_sac FROM products WHERE id=? AND company_id=? AND status='active'",[productId,activeCompanyId])[0]
         if(!product) throw new Error('A purchase product does not belong to the active company or is inactive.')
@@ -864,25 +807,14 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         const description=optionalText(item.description,'Item description',180)||product.name
         const hsnSac=optionalText(item.hsnSac ?? item.hsn_sac ?? product.hsn_sac,'HSN/SAC code',8)
         if(hsnSac && !/^(?:[0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8})$/.test(hsnSac)) throw new Error('HSN/SAC code must contain 2, 4, 6 or 8 digits.')
-        const taxRate=taxEnabled?Number(item.taxRate ?? 0):0
-        if(!Number.isFinite(taxRate)||taxRate<0||taxRate>100) throw new Error('Purchase GST rate must be between 0 and 100.')
-        return {product_id:productId,description,hsn_sac:hsnSac,quantity,unit_cost:unitCost,tax_rate:taxRate,taxMode,supplyType}
+        return {id:randomUUID(),product_id:productId,description,hsn_sac:hsnSac,quantity,unit_cost:unitCost,line_total:Math.round(quantity*unitCost*100)/100}
       })
-      const tax=calculateDocumentTax(rawItems.map(item=>({quantity:item.quantity,unitPrice:item.unit_cost,taxRate:item.tax_rate,taxMode,supplyType})))
-      const items=rawItems.map((item,index)=>({
-        id:randomUUID(),...item,line_total:tax.lines[index].total,taxable_value:tax.lines[index].taxable_value,
-        cgst:tax.lines[index].cgst,sgst:tax.lines[index].sgst,igst:tax.lines[index].igst,total_tax:tax.lines[index].total_tax
-      }))
-      const bill={id:randomUUID(),company_id:activeCompanyId,financial_year_id:fy.id,vendor_id:vendorId,bill_number:billNumber,bill_date:billDate,
-        status:'draft',total_amount:tax.total,taxable_value:tax.taxable_value,cgst:tax.cgst,sgst:tax.sgst,igst:tax.igst,total_tax:tax.total_tax,
-        tax_mode:taxMode,supply_type:supplyType,place_of_supply_state_code:placeState,supplier_gstin:vendor.gstin,
-        notes:optionalText(input.notes,'Notes',1000),created_at:new Date().toISOString()}
+      const total=Math.round(items.reduce((sum,item)=>sum+item.line_total,0)*100)/100
+      const bill={id:randomUUID(),company_id:activeCompanyId,financial_year_id:fy.id,vendor_id:vendorId,bill_number:billNumber,bill_date:billDate,status:'draft',total_amount:total,notes:optionalText(input.notes,'Notes',1000),created_at:new Date().toISOString()}
       withTransaction(()=>{
-        run(db,'INSERT INTO purchase_bills (id,company_id,financial_year_id,vendor_id,bill_number,bill_date,status,total_amount,taxable_value,cgst,sgst,igst,total_tax,tax_mode,supply_type,place_of_supply_state_code,supplier_gstin,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [bill.id,bill.company_id,bill.financial_year_id,bill.vendor_id,bill.bill_number,bill.bill_date,bill.status,bill.total_amount,bill.taxable_value,bill.cgst,bill.sgst,bill.igst,bill.total_tax,bill.tax_mode,bill.supply_type,bill.place_of_supply_state_code,bill.supplier_gstin,bill.notes,bill.created_at])
-        for(const item of items) run(db,'INSERT INTO purchase_bill_items (id,bill_id,company_id,product_id,description,hsn_sac,quantity,unit_cost,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [item.id,bill.id,activeCompanyId,item.product_id,item.description,item.hsn_sac,item.quantity,item.unit_cost,item.line_total,item.tax_rate,item.taxable_value,item.cgst,item.sgst,item.igst,item.total_tax])
-        recordAudit('purchase_bill.draft_created','purchase_bill',bill.id,{bill_number:billNumber,total_amount:tax.total,taxable_value:tax.taxable_value,total_tax:tax.total_tax,supply_type:supplyType})
+        run(db,'INSERT INTO purchase_bills (id,company_id,financial_year_id,vendor_id,bill_number,bill_date,status,total_amount,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',[bill.id,bill.company_id,bill.financial_year_id,bill.vendor_id,bill.bill_number,bill.bill_date,bill.status,bill.total_amount,bill.notes,bill.created_at])
+        for(const item of items) run(db,'INSERT INTO purchase_bill_items (id,bill_id,company_id,product_id,description,hsn_sac,quantity,unit_cost,line_total) VALUES (?,?,?,?,?,?,?,?,?)',[item.id,bill.id,activeCompanyId,item.product_id,item.description,item.hsn_sac,item.quantity,item.unit_cost,item.line_total])
+        recordAudit('purchase_bill.draft_created','purchase_bill',bill.id,{bill_number:billNumber,total_amount:total})
       })
       return bill
     },
