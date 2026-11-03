@@ -302,6 +302,9 @@ test('calculates and persists intra-state CGST and SGST on sales invoices', asyn
   assert.equal(saved.items[0].taxable_value, 200)
   assert.equal(saved.items[0].cgst, 18)
   assert.equal(saved.seller_gstin, '08ABCDE1234F1Z5')
+  assert.equal(saved.customer_name, customer.name)
+  assert.equal(saved.business_name, db.listCompanies()[0].business_name)
+  assert.equal(saved.customer_address, customer.address || null)
   db.close()
 })
 
