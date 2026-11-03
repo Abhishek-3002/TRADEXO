@@ -49,6 +49,7 @@ function registerDatabaseHandlers() {
   ipcMain.handle('db:invoices:reverse', (_event, id, reason) => localDb.reverseSalesInvoice(id, reason))
   ipcMain.handle('db:purchases:list', (_event, limit) => localDb.listPurchaseBills(limit))
   ipcMain.handle('db:purchases:payments:list', (_event, billId, limit) => localDb.listPurchasePayments(billId, limit))
+  ipcMain.handle('db:reports:payables-aging', (_event, asOfDate) => localDb.getPayablesAging(asOfDate))
   ipcMain.handle('db:purchases:payments:create', (_event, input) => localDb.recordPurchasePayment(input))
   ipcMain.handle('db:purchases:create-draft', (_event, input) => localDb.createPurchaseBillDraft(input))
   ipcMain.handle('db:purchases:get', (_event, id) => localDb.getPurchaseBill(id))

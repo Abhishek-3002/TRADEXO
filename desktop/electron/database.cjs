@@ -2,6 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { calculateDocumentTax } = require('./tax-engine.cjs')
+const { summarizePayables } = require('./payables-aging.cjs')
 
 const schema = `
 PRAGMA foreign_keys = ON;
@@ -911,6 +912,12 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       if(!bill) return null
       bill.items=rows(db,'SELECT id,product_id,description,hsn_sac,quantity,unit_cost,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax FROM purchase_bill_items WHERE bill_id=? AND company_id=?',[bill.id,activeCompanyId])
       return bill
+    },
+    getPayablesAging(asOfDate) {
+      const bills = rows(db,`SELECT b.id,b.bill_number,b.bill_date,b.status,b.total_amount,
+        COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0) AS paid_amount
+        FROM purchase_bills b WHERE b.company_id=? AND b.status='posted' ORDER BY b.bill_date`,[activeCompanyId])
+      return summarizePayables(bills, asOfDate)
     },
     listPurchasePayments(billId = null, limit = 200) {
       const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 200)))

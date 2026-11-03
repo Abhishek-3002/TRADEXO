@@ -9,6 +9,11 @@ Latest validation: GitHub Actions run 41705333359 passed on commit `e284eeba4ee0
 - Multi-company, company-wise financial year and GST settings are implemented on `rename-to-bizora` in open PR #2; the PR remains unmerged.
 - This repository is a development foundation, not a production-ready ERP.
 
+## Supplier Payables Aging
+- Reports workspace now includes a supplier payables aging summary using posted purchase bills and append-only supplier payment records.
+- Fully paid and unposted bills are excluded; current, 1–30, 31–60, 61–90 and over-90-day buckets are calculated as of a selected date.
+- Since purchase bills do not yet have due-date fields, the report ages balances from bill date and labels this limitation in the UI.
+
 ## Purchase-side GST
 - Vendor records can store and validate a supplier GSTIN; purchase bills use supplier state and active company place-of-supply state to calculate intra-state CGST/SGST or inter-state IGST.
 - Purchase bill and line records persist taxable value, tax split, GST rate, supplier GSTIN and supply type; registered vendor purchases use the shared paise-rounded tax engine.
