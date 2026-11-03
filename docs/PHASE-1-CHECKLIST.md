@@ -1,10 +1,13 @@
 # Phase 1 checklist
 
-- [ ] Create a separate private GitHub repository named BIZORA.
-- [ ] Upload this starter workspace.
-- [ ] Confirm Node.js and Git are installed.
-- [ ] Run the website locally.
-- [ ] Review homepage on desktop and mobile.
-- [ ] Confirm product copy and contact details.
-- [ ] Decide Owner Admin access model.
-- [ ] Confirm PC RAM, SSD/HDD and Windows version before desktop packaging.
+- [x] Create a GitHub-ready starter workspace.
+- [x] Add website and desktop renderer build checks.
+- [x] Verify website production build in GitHub Actions.
+- [x] Verify desktop renderer production build in GitHub Actions.
+- [x] Add the first local database module and automated test suite on the development branch.
+- [ ] Run the new database tests in GitHub Actions.
+- [ ] Wire the customer and product screens to the local database.
+- [ ] Run the desktop application on Windows 10/11.
+- [ ] Verify local data survives app restart and Windows restart.
+- [ ] Implement backup/restore and database encryption before real customer data.
+- [ ] Complete a security and release review before distributing installers.
