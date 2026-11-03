@@ -7,7 +7,7 @@ test('groups outstanding posted supplier bills by bill-date aging buckets', () =
     { status: 'posted', bill_date: '2026-11-04', total_amount: 100, paid_amount: 25 },
     { status: 'posted', bill_date: '2026-10-20', total_amount: 200, paid_amount: 0 },
     { status: 'posted', bill_date: '2026-09-10', total_amount: 300, paid_amount: 100 },
-    { status: 'posted', bill_date: '2026-07-01', total_amount: 400, paid_amount: 0 },
+    { status: 'posted', bill_date: '2026-08-15', total_amount: 400, paid_amount: 0 },
     { status: 'posted', bill_date: '2026-01-01', total_amount: 500, paid_amount: 500 },
     { status: 'draft', bill_date: '2026-01-01', total_amount: 600, paid_amount: 0 }
   ], '2026-11-04')
