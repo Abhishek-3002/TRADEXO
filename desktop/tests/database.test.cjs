@@ -113,6 +113,15 @@ test('stores GSTIN registrations against the selected company and validates form
   db.close()
 })
 
+test('stores optional HSN/SAC codes and validates their digit length', async () => {
+  const db = await openLocalDatabase()
+  const product = db.createProduct({ name: 'HSN Product', hsnSac: '30049099' })
+  assert.equal(product.hsn_sac, '30049099')
+  assert.equal(db.listProducts()[0].hsn_sac, '30049099')
+  assert.throws(() => db.createProduct({ name: 'Bad HSN', hsnSac: 'AB12' }), /HSN/)
+  db.close()
+})
+
 test('allows the same SKU in different companies but prevents duplicates within one company', async () => {
   const db = await openLocalDatabase()
   const first = db.getCurrentCompany()
@@ -139,7 +148,7 @@ test('creates encrypted backup and restores the saved company data', async () =>
   source.createCustomer({ name: 'Customer From Backup' })
   const gstin = source.addCompanyGstin({ gstin: '08ABCDE1234F1Z5', label: 'Rajasthan' })
   const customer = source.createCustomer({ name: 'Invoice Customer' })
-  const product = source.createProduct({ name: 'Backup Product', sku: 'BK-01', sellingPrice: 20, openingStock: 0 })
+  const product = source.createProduct({ name: 'Backup Product', sku: 'BK-01', hsnSac: '30049099', sellingPrice: 20, openingStock: 0 })
   const vendor = source.createVendor({ name: 'Backup Supplier', phone: '9876543210' })
   const year = source.createFinancialYear({ label: '2026-27', startDate: '2026-04-01', endDate: '2027-03-31' })
   source.setActiveFinancialYear(year.id)
@@ -167,6 +176,7 @@ test('creates encrypted backup and restores the saved company data', async () =>
   assert.equal(target.listPurchasePayments(purchase.id).length, 1)
   assert.equal(target.listSalesInvoices()[0].status, 'draft')
   assert.equal(target.getProductStock(product.id).current_stock, 5)
+  assert.equal(target.listProducts()[0].hsn_sac, '30049099')
   assert.equal(target.listStockMovements().length, 1)
   assert.ok(target.getSummary().audit_events >= 2)
   target.close()
@@ -229,7 +239,7 @@ async function createTradingFixture() {
   const company = db.getCurrentCompany()
   const customer = db.createCustomer({ name: 'Test Buyer' })
   const vendor = db.createVendor({ name: 'Test Supplier' })
-  const product = db.createProduct({ name: 'Test Medicine', sku: 'MED-01', sellingPrice: 50, openingStock: 0 })
+  const product = db.createProduct({ name: 'Test Medicine', sku: 'MED-01', hsnSac: '30049099', sellingPrice: 50, openingStock: 0 })
   const fy = db.createFinancialYear({ label: '2026-27', startDate: '2026-04-01', endDate: '2027-03-31' })
   db.setActiveFinancialYear(fy.id)
   return { db, company, customer, vendor, product, fy }
@@ -266,6 +276,8 @@ test('purchase posting adds stock and sale posting reduces it using immutable mo
   assert.equal(db.getProductStock(product.id).current_stock, 6)
   assert.equal(db.listStockMovements().length, 2)
   assert.equal(db.getSalesInvoice(invoice.id).status, 'posted')
+  assert.equal(db.getSalesInvoice(invoice.id).items[0].hsn_sac, '30049099')
+  assert.equal(db.getPurchaseBill(purchase.id).items[0].hsn_sac, '30049099')
   assert.equal(db.getPurchaseBill(purchase.id).status, 'posted')
   db.close()
 })

@@ -9,6 +9,11 @@ Latest validation: GitHub Actions run 41701463978 passed on commit `8577d8e89d99
 - Multi-company, company-wise financial year and GST settings are implemented on `rename-to-bizora` in open PR #2; the PR remains unmerged.
 - This repository is a development foundation, not a production-ready ERP.
 
+## HSN / SAC item codes
+- Product catalogue supports optional 2/4/6/8-digit HSN/SAC codes with validation.
+- HSN/SAC is copied into sales invoice and purchase bill line records so later product edits do not rewrite historic document lines.
+- Sales invoice print layout includes the HSN/SAC column; database schema version 10 upgrades existing databases and encrypted backups.
+
 ## Supplier payments
 - Purchase bills now support company-scoped supplier payment entries with partial/full payment, outstanding balances and payment history.
 - Supplier payment records are append-only with database update/delete guards; only posted bills can be paid and overpayments are rejected.

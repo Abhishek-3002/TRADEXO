@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS products (
   company_id TEXT REFERENCES companies(id),
   name TEXT NOT NULL,
   sku TEXT UNIQUE,
+  hsn_sac TEXT,
   unit TEXT NOT NULL DEFAULT 'pcs',
   selling_price REAL NOT NULL DEFAULT 0 CHECK (selling_price >= 0),
   opening_stock REAL NOT NULL DEFAULT 0 CHECK (opening_stock >= 0),
@@ -139,6 +140,7 @@ CREATE TABLE IF NOT EXISTS sales_invoice_items (
   company_id TEXT NOT NULL REFERENCES companies(id),
   product_id TEXT NOT NULL REFERENCES products(id),
   description TEXT NOT NULL,
+  hsn_sac TEXT,
   quantity REAL NOT NULL CHECK(quantity > 0),
   unit_price REAL NOT NULL CHECK(unit_price >= 0),
   line_total REAL NOT NULL CHECK(line_total >= 0),
@@ -171,6 +173,7 @@ CREATE TABLE IF NOT EXISTS purchase_bill_items (
   company_id TEXT NOT NULL REFERENCES companies(id),
   product_id TEXT NOT NULL REFERENCES products(id),
   description TEXT NOT NULL,
+  hsn_sac TEXT,
   quantity REAL NOT NULL CHECK(quantity > 0),
   unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
   line_total REAL NOT NULL CHECK(line_total >= 0)
@@ -343,7 +346,15 @@ async function openLocalDatabase(filePath = null, encryption = null) {
   ); CREATE INDEX IF NOT EXISTS purchase_payments_bill_idx ON purchase_payments(company_id,bill_id,payment_date);
   CREATE TRIGGER IF NOT EXISTS purchase_payments_no_update BEFORE UPDATE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries are immutable.'); END;
   CREATE TRIGGER IF NOT EXISTS purchase_payments_no_delete BEFORE DELETE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries cannot be deleted.'); END;`)
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','9')")
+  if (storedSchemaVersion < 10) {
+    const productColumns = rows(db, 'PRAGMA table_info(products)').map(column => column.name)
+    if (!productColumns.includes('hsn_sac')) db.exec('ALTER TABLE products ADD COLUMN hsn_sac TEXT')
+    const salesItemColumns = rows(db, 'PRAGMA table_info(sales_invoice_items)').map(column => column.name)
+    if (!salesItemColumns.includes('hsn_sac')) db.exec('ALTER TABLE sales_invoice_items ADD COLUMN hsn_sac TEXT')
+    const purchaseItemColumns = rows(db, 'PRAGMA table_info(purchase_bill_items)').map(column => column.name)
+    if (!purchaseItemColumns.includes('hsn_sac')) db.exec('ALTER TABLE purchase_bill_items ADD COLUMN hsn_sac TEXT')
+  }
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','10')")
 
   function persist() {
     if (!filePath) return
@@ -374,7 +385,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6, 7, 8, 9].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7, 8, 9, 10].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -414,6 +425,15 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         CREATE TRIGGER IF NOT EXISTS purchase_payments_no_update BEFORE UPDATE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries are immutable.'); END;
         CREATE TRIGGER IF NOT EXISTS purchase_payments_no_delete BEFORE DELETE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries cannot be deleted.'); END;
         UPDATE app_meta SET value='9' WHERE key='schema_version';`)
+      }
+      if (version < 10) {
+        const productColumns = rows(candidate, 'PRAGMA table_info(products)').map(column => column.name)
+        if (!productColumns.includes('hsn_sac')) candidate.exec('ALTER TABLE products ADD COLUMN hsn_sac TEXT')
+        const salesItemColumns = rows(candidate, 'PRAGMA table_info(sales_invoice_items)').map(column => column.name)
+        if (!salesItemColumns.includes('hsn_sac')) candidate.exec('ALTER TABLE sales_invoice_items ADD COLUMN hsn_sac TEXT')
+        const purchaseItemColumns = rows(candidate, 'PRAGMA table_info(purchase_bill_items)').map(column => column.name)
+        if (!purchaseItemColumns.includes('hsn_sac')) candidate.exec('ALTER TABLE purchase_bill_items ADD COLUMN hsn_sac TEXT')
+        candidate.exec("UPDATE app_meta SET value='10' WHERE key='schema_version'")
       }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
@@ -637,7 +657,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const taxMode = settings.gst_enabled ? settings.default_tax_mode : 'none'
       const rawItems = input.items.map(item => {
         const productId = requiredText(item.productId, 'Product', 80)
-        const product = rows(db, "SELECT id,name,unit FROM products WHERE id=? AND company_id=? AND status='active'", [productId,activeCompanyId])[0]
+        const product = rows(db, "SELECT id,name,unit,hsn_sac FROM products WHERE id=? AND company_id=? AND status='active'", [productId,activeCompanyId])[0]
         if (!product) throw new Error('An invoice product does not belong to the active company or is inactive.')
         const quantity = Number(item.quantity)
         if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 100000000) throw new Error('Item quantity must be greater than zero.')
@@ -645,7 +665,9 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         const taxRate = settings.gst_enabled ? Number(item.taxRate ?? 0) : 0
         if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) throw new Error('GST rate must be between 0 and 100.')
         const description = optionalText(item.description, 'Item description', 180) || product.name
-        return { product_id:productId,description,quantity,unit_price:unitPrice,tax_rate:taxRate,taxMode,supplyType }
+        const hsnSac = optionalText(item.hsnSac ?? item.hsn_sac ?? product.hsn_sac, 'HSN/SAC code', 8)
+        if (hsnSac && !/^(?:[0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8})$/.test(hsnSac)) throw new Error('HSN/SAC code must contain 2, 4, 6 or 8 digits.')
+        return { product_id:productId,description,hsn_sac:hsnSac,quantity,unit_price:unitPrice,tax_rate:taxRate,taxMode,supplyType }
       })
       const tax = calculateDocumentTax(rawItems.map(item => ({
         quantity:item.quantity,unitPrice:item.unit_price,taxRate:item.tax_rate,taxMode,supplyType
@@ -666,8 +688,8 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       withTransaction(() => {
         run(db, 'INSERT INTO sales_invoices (id,company_id,financial_year_id,customer_id,invoice_number,invoice_date,due_date,status,total_amount,taxable_value,cgst,sgst,igst,total_tax,tax_mode,supply_type,place_of_supply_state_code,seller_gstin,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [invoice.id,invoice.company_id,invoice.financial_year_id,invoice.customer_id,invoice.invoice_number,invoice.invoice_date,invoice.due_date,invoice.status,invoice.total_amount,invoice.taxable_value,invoice.cgst,invoice.sgst,invoice.igst,invoice.total_tax,invoice.tax_mode,invoice.supply_type,invoice.place_of_supply_state_code,invoice.seller_gstin,invoice.notes,invoice.created_at])
-        for (const item of items) run(db, 'INSERT INTO sales_invoice_items (id,invoice_id,company_id,product_id,description,quantity,unit_price,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [item.id,invoice.id,activeCompanyId,item.product_id,item.description,item.quantity,item.unit_price,item.line_total,item.tax_rate,item.taxable_value,item.cgst,item.sgst,item.igst,item.total_tax])
+        for (const item of items) run(db, 'INSERT INTO sales_invoice_items (id,invoice_id,company_id,product_id,description,hsn_sac,quantity,unit_price,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [item.id,invoice.id,activeCompanyId,item.product_id,item.description,item.hsn_sac,item.quantity,item.unit_price,item.line_total,item.tax_rate,item.taxable_value,item.cgst,item.sgst,item.igst,item.total_tax])
         recordAudit('sales_invoice.draft_created','sales_invoice',invoice.id,{invoice_number:invoiceNumber,total_amount:tax.total,taxable_value:tax.taxable_value,total_tax:tax.total_tax,supply_type:supplyType})
       })
       return invoice
@@ -680,7 +702,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
           WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)>=i.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
         FROM sales_invoices i JOIN customers c ON c.id=i.customer_id JOIN financial_years fy ON fy.id=i.financial_year_id JOIN companies co ON co.id=i.company_id WHERE i.id=? AND i.company_id=?`, [requiredText(invoiceId,'Invoice ID',80),activeCompanyId])[0]
       if (!invoice) return null
-      invoice.items = rows(db, 'SELECT id,product_id,description,quantity,unit_price,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax FROM sales_invoice_items WHERE invoice_id=? AND company_id=?', [invoice.id,activeCompanyId])
+      invoice.items = rows(db, 'SELECT id,product_id,description,hsn_sac,quantity,unit_price,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax FROM sales_invoice_items WHERE invoice_id=? AND company_id=?', [invoice.id,activeCompanyId])
       return invoice
     },
     listSalesReceipts(invoiceId = null, limit = 200) {
@@ -777,19 +799,21 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       if (!Array.isArray(input.items) || input.items.length<1 || input.items.length>100) throw new Error('Add between 1 and 100 purchase items.')
       const items=input.items.map(item=>{
         const productId=requiredText(item.productId,'Product',80)
-        const product=rows(db,"SELECT id,name FROM products WHERE id=? AND company_id=? AND status='active'",[productId,activeCompanyId])[0]
+        const product=rows(db,"SELECT id,name,hsn_sac FROM products WHERE id=? AND company_id=? AND status='active'",[productId,activeCompanyId])[0]
         if(!product) throw new Error('A purchase product does not belong to the active company or is inactive.')
         const quantity=Number(item.quantity)
         if(!Number.isFinite(quantity)||quantity<=0||quantity>100000000) throw new Error('Item quantity must be greater than zero.')
         const unitCost=nonNegativeNumber(item.unitCost,'Unit cost')
         const description=optionalText(item.description,'Item description',180)||product.name
-        return {id:randomUUID(),product_id:productId,description,quantity,unit_cost:unitCost,line_total:Math.round(quantity*unitCost*100)/100}
+        const hsnSac=optionalText(item.hsnSac ?? item.hsn_sac ?? product.hsn_sac,'HSN/SAC code',8)
+        if(hsnSac && !/^(?:[0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8})$/.test(hsnSac)) throw new Error('HSN/SAC code must contain 2, 4, 6 or 8 digits.')
+        return {id:randomUUID(),product_id:productId,description,hsn_sac:hsnSac,quantity,unit_cost:unitCost,line_total:Math.round(quantity*unitCost*100)/100}
       })
       const total=Math.round(items.reduce((sum,item)=>sum+item.line_total,0)*100)/100
       const bill={id:randomUUID(),company_id:activeCompanyId,financial_year_id:fy.id,vendor_id:vendorId,bill_number:billNumber,bill_date:billDate,status:'draft',total_amount:total,notes:optionalText(input.notes,'Notes',1000),created_at:new Date().toISOString()}
       withTransaction(()=>{
         run(db,'INSERT INTO purchase_bills (id,company_id,financial_year_id,vendor_id,bill_number,bill_date,status,total_amount,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',[bill.id,bill.company_id,bill.financial_year_id,bill.vendor_id,bill.bill_number,bill.bill_date,bill.status,bill.total_amount,bill.notes,bill.created_at])
-        for(const item of items) run(db,'INSERT INTO purchase_bill_items (id,bill_id,company_id,product_id,description,quantity,unit_cost,line_total) VALUES (?,?,?,?,?,?,?,?)',[item.id,bill.id,activeCompanyId,item.product_id,item.description,item.quantity,item.unit_cost,item.line_total])
+        for(const item of items) run(db,'INSERT INTO purchase_bill_items (id,bill_id,company_id,product_id,description,hsn_sac,quantity,unit_cost,line_total) VALUES (?,?,?,?,?,?,?,?,?)',[item.id,bill.id,activeCompanyId,item.product_id,item.description,item.hsn_sac,item.quantity,item.unit_cost,item.line_total])
         recordAudit('purchase_bill.draft_created','purchase_bill',bill.id,{bill_number:billNumber,total_amount:total})
       })
       return bill
@@ -817,7 +841,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
           WHEN COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0)>=b.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
         FROM purchase_bills b JOIN vendors v ON v.id=b.vendor_id JOIN financial_years fy ON fy.id=b.financial_year_id WHERE b.id=? AND b.company_id=?`,[requiredText(billId,'Purchase bill ID',80),activeCompanyId])[0]
       if(!bill) return null
-      bill.items=rows(db,'SELECT id,product_id,description,quantity,unit_cost,line_total FROM purchase_bill_items WHERE bill_id=? AND company_id=?',[bill.id,activeCompanyId])
+      bill.items=rows(db,'SELECT id,product_id,description,hsn_sac,quantity,unit_cost,line_total FROM purchase_bill_items WHERE bill_id=? AND company_id=?',[bill.id,activeCompanyId])
       return bill
     },
     listPurchasePayments(billId = null, limit = 200) {
@@ -927,7 +951,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     },
     listProducts(limit = 100) {
       const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 100)))
-      return rows(db, 'SELECT id,name,sku,unit,selling_price,opening_stock,status,created_at FROM products WHERE company_id=? ORDER BY created_at DESC LIMIT ?', [activeCompanyId, safeLimit])
+      return rows(db, 'SELECT id,name,sku,hsn_sac,unit,selling_price,opening_stock,status,created_at FROM products WHERE company_id=? ORDER BY created_at DESC LIMIT ?', [activeCompanyId, safeLimit])
     },
     createProduct(input = {}) {
       const product = {
@@ -935,13 +959,15 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         company_id: activeCompanyId,
         name: requiredText(input.name, 'Product name'),
         sku: optionalText(input.sku, 'SKU', 60),
+        hsn_sac: optionalText(input.hsnSac ?? input.hsn_sac, 'HSN/SAC code', 8),
         unit: optionalText(input.unit, 'Unit', 20) || 'pcs',
         selling_price: nonNegativeNumber(input.sellingPrice, 'Selling price'),
         opening_stock: nonNegativeNumber(input.openingStock, 'Opening stock'),
         created_at: new Date().toISOString()
       }
-      run(db, 'INSERT INTO products (id,company_id,name,sku,unit,selling_price,opening_stock,created_at) VALUES (?,?,?,?,?,?,?,?)',
-        [product.id, product.company_id, product.name, product.sku, product.unit, product.selling_price, product.opening_stock, product.created_at])
+      if (product.hsn_sac && !/^(?:[0-9]{2}|[0-9]{4}|[0-9]{6}|[0-9]{8})$/.test(product.hsn_sac)) throw new Error('HSN/SAC code must contain 2, 4, 6 or 8 digits.')
+      run(db, 'INSERT INTO products (id,company_id,name,sku,hsn_sac,unit,selling_price,opening_stock,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+        [product.id, product.company_id, product.name, product.sku, product.hsn_sac, product.unit, product.selling_price, product.opening_stock, product.created_at])
       recordAudit('product.created', 'product', product.id, { name: product.name })
       persist()
       return product
