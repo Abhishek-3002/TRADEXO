@@ -2,7 +2,7 @@
 
 Updated: 2026-11-04
 
-Latest validation: GitHub Actions run 41705333359 passed on commit `e284eeba4ee0f425482f99dd00daf9511293e363` — website production build, desktop renderer build and all 37 database tests passed.
+Latest validation: GitHub Actions run 41707453670 passed on commit `ae3d55926f68e6086ca74c362af4910bbc33e1cb` — website production build, desktop renderer build and all 42 database tests passed.
 
 ## Verified baseline
 - Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
