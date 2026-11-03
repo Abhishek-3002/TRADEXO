@@ -10,7 +10,8 @@ const testEncryption = {
   encrypt(data) {
     const iv = crypto.randomBytes(12)
     const cipher = crypto.createCipheriv('aes-256-gcm', testKey, iv)
-    return Buffer.concat([iv, cipher.getAuthTag(), cipher.update(data), cipher.final()])
+    const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
+    return Buffer.concat([iv, cipher.getAuthTag(), encrypted])
   },
   decrypt(data) {
     const iv = data.subarray(0, 12)
