@@ -2,6 +2,8 @@
 
 Updated: 2026-11-03
 
+Latest validation: GitHub Actions run 41693925721 passed (website build, desktop build and all six database tests).
+
 ## Verified baseline
 - Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
 - Multi-company/GSTIN work is proposed on the `rename-to-bizora` branch in open PR #2; latest checks are running.
@@ -21,14 +23,14 @@ Updated: 2026-11-03
 ## Known limitations — do not use for live business records yet
 - Database file is not encrypted at rest. Use only synthetic test data until encryption and recovery are implemented and reviewed.
 - GSTIN format validation is not government verification or tax advice.
-- Existing product SKU uniqueness is database-wide, not yet company-specific; a safe migration is still needed.
+- Product SKU uniqueness is scoped to each company by a schema migration; the migration and cross-company SKU test pass in CI.
 - Invoice posting, immutable stock ledger, tax calculations, role permissions, backup/restore, sync conflict resolution, license enforcement and signed updater are not complete.
 - SQL.js persists a complete database snapshot on each write; performance must be load-tested before larger deployments.
 - Windows installer and real Windows 10/11 installation have not yet been validated.
 
 ## Next milestones
 1. Pass CI for multi-company/GSTIN changes and test migration from the earlier single-company database.
-2. Add a safe company-specific SKU migration and company-wise financial year/tax profile.
+2. Add company-wise financial year/tax profile and GST tax settings.
 3. Implement backup/restore, encryption and crash-recovery tests before any real data.
 4. Add invoices and immutable sales/stock ledgers using transaction-safe posting and reversal (not deletion).
 5. Add role permissions and explicit company/GSTIN selection before tax transactions.
