@@ -137,6 +137,7 @@ async function openLocalDatabase(filePath = null) {
   if (storedSchemaVersion < 3) {
     // Replace the legacy database-wide SKU constraint with company-scoped uniqueness.
     db.exec(`
+      BEGIN TRANSACTION;
       CREATE TABLE products_migrating (
         id TEXT PRIMARY KEY,
         company_id TEXT REFERENCES companies(id),
@@ -154,6 +155,7 @@ async function openLocalDatabase(filePath = null) {
       ALTER TABLE products_migrating RENAME TO products;
       CREATE INDEX products_name_idx ON products(name);
       CREATE UNIQUE INDEX products_company_sku_unique ON products(company_id,sku) WHERE sku IS NOT NULL;
+      COMMIT;
     `)
   }
   run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','3')")
