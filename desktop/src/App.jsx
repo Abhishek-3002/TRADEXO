@@ -25,7 +25,7 @@ function DataWorkspace({type}) {
   try {
    if (isCustomers) await api.createCustomer({name:form.name,phone:form.phone,email:form.email,address:form.address})
    else await api.createProduct({name:form.name,sku:form.sku,hsnSac:form.hsnSac,defaultTaxRate:form.defaultTaxRate,unit:form.unit,sellingPrice:form.sellingPrice,openingStock:form.openingStock})
-   setForm({name:'',phone:'',email:'',address:'',sku:'',hsnSac:'',unit:'pcs',sellingPrice:'0',openingStock:'0'})
+   setForm({name:'',phone:'',email:'',address:'',sku:'',hsnSac:'',defaultTaxRate:'0',unit:'pcs',sellingPrice:'0',openingStock:'0'})
    setNotice(isCustomers ? 'Customer saved on this PC.' : 'Product saved on this PC.')
    await load()
   } catch (e) { setError(e.message || 'Could not save this record.') }
