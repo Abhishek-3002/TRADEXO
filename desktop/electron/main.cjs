@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage } = require('electron')
 const path = require('node:path')
 const { openLocalDatabase } = require('./database.cjs')
 const isDev = !app.isPackaged
@@ -35,7 +35,12 @@ function registerDatabaseHandlers() {
 
 app.whenReady().then(async () => {
   const databasePath = path.join(app.getPath('userData'), 'data', 'bizora.sqlite')
-  localDb = await openLocalDatabase(databasePath)
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable; BIZORA will not save business data without encryption.')
+  const encryption = {
+    encrypt: data => safeStorage.encryptString(data.toString('base64')),
+    decrypt: data => Buffer.from(safeStorage.decryptString(data), 'base64')
+  }
+  localDb = await openLocalDatabase(databasePath, encryption)
   ipcMain.handle('app:get-version', () => app.getVersion())
   registerDatabaseHandlers()
   createWindow()
