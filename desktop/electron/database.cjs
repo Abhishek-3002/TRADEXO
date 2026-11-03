@@ -469,7 +469,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const bankIfsc = optionalText(input.bank_ifsc, 'IFSC', 11)?.toUpperCase() || null
       if (bankIfsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(bankIfsc)) throw new Error('Enter a valid 11-character IFSC code.')
       const bankBranch = optionalText(input.bank_branch, 'Bank branch', 120)
-      run(db, \`UPDATE companies SET business_name=?,legal_name=?,address=?,phone=?,email=?,website=?,bank_name=?,bank_account_name=?,bank_account_number=?,bank_ifsc=?,bank_branch=? WHERE id=?\`,
+      run(db, `UPDATE companies SET business_name=?,legal_name=?,address=?,phone=?,email=?,website=?,bank_name=?,bank_account_name=?,bank_account_number=?,bank_ifsc=?,bank_branch=? WHERE id=?`,
         [businessName,legalName,address,phone,email,website,bankName,bankAccountName,bankAccountNumber,bankIfsc,bankBranch,activeCompanyId])
       recordAudit('company.profile_updated', 'company', activeCompanyId, { business_name: businessName, bank_details_updated: Boolean(bankName || bankAccountName || bankAccountNumber || bankIfsc || bankBranch) })
       persist()
