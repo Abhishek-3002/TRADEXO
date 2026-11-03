@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('bizora', Object.freeze({
     getCurrentCompany: () => ipcRenderer.invoke('db:company:current'),
     listCompanies: () => ipcRenderer.invoke('db:companies:list'),
     createCompany: input => ipcRenderer.invoke('db:companies:create', input),
+    updateCompanyProfile: input => ipcRenderer.invoke('db:company:profile:update', input),
     setActiveCompany: id => ipcRenderer.invoke('db:company:set-active', id),
     listCompanyGstins: id => ipcRenderer.invoke('db:company:gstins:list', id),
     addCompanyGstin: input => ipcRenderer.invoke('db:company:gstins:add', input),

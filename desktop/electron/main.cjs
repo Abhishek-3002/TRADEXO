@@ -25,6 +25,7 @@ function registerDatabaseHandlers() {
   ipcMain.handle('db:company:current', () => localDb.getCurrentCompany())
   ipcMain.handle('db:companies:list', () => localDb.listCompanies())
   ipcMain.handle('db:companies:create', (_event, input) => localDb.createCompany(input))
+  ipcMain.handle('db:company:profile:update', (_event, input) => localDb.updateCompanyProfile(input))
   ipcMain.handle('db:company:set-active', (_event, id) => localDb.setActiveCompany(id))
   ipcMain.handle('db:company:gstins:list', (_event, id) => localDb.listCompanyGstins(id))
   ipcMain.handle('db:company:gstins:add', (_event, input) => localDb.addCompanyGstin(input))

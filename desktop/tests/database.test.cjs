@@ -72,6 +72,36 @@ test('keeps customer and product records isolated by active company', async () =
   db.close()
 })
 
+test('saves a validated company profile and keeps details isolated by company', async () => {
+  const db = await openLocalDatabase()
+  const first = db.getCurrentCompany()
+  const saved = db.updateCompanyProfile({
+    business_name: 'BIZORA Trading',
+    legal_name: 'BIZORA Trading Private Limited',
+    address: 'Pugal Phanta, Bikaner, Rajasthan',
+    phone: '9876543210',
+    email: 'accounts@example.com',
+    website: 'https://example.com',
+    bank_name: 'Test Bank',
+    bank_account_name: 'BIZORA Trading',
+    bank_account_number: '123456789012',
+    bank_ifsc: 'abcd0123456',
+    bank_branch: 'Bikaner'
+  })
+  assert.equal(saved.business_name, 'BIZORA Trading')
+  assert.equal(saved.address, 'Pugal Phanta, Bikaner, Rajasthan')
+  assert.equal(saved.bank_ifsc, 'ABCD0123456')
+  assert.equal(db.listCompanies()[0].bank_account_number, '123456789012')
+  assert.throws(() => db.updateCompanyProfile({ ...saved, email: 'not-an-email' }), /valid business email/)
+  assert.throws(() => db.updateCompanyProfile({ ...saved, bank_ifsc: 'BAD' }), /valid 11-character IFSC/)
+  const second = db.createCompany({ businessName: 'Separate Profile Co' })
+  db.setActiveCompany(second.id)
+  assert.equal(db.getCurrentCompany().address, null)
+  db.setActiveCompany(first.id)
+  assert.equal(db.getCurrentCompany().bank_name, 'Test Bank')
+  db.close()
+})
+
 test('stores GSTIN registrations against the selected company and validates format', async () => {
   const db = await openLocalDatabase()
   const company = db.getCurrentCompany()

@@ -21,6 +21,15 @@ CREATE TABLE IF NOT EXISTS companies (
   id TEXT PRIMARY KEY,
   business_name TEXT NOT NULL,
   legal_name TEXT,
+  address TEXT,
+  phone TEXT,
+  email TEXT,
+  website TEXT,
+  bank_name TEXT,
+  bank_account_name TEXT,
+  bank_account_number TEXT,
+  bank_ifsc TEXT,
+  bank_branch TEXT,
   currency TEXT NOT NULL DEFAULT 'INR',
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
   created_at TEXT NOT NULL
@@ -305,7 +314,12 @@ async function openLocalDatabase(filePath = null, encryption = null) {
   const itemColumns = rows(db, 'PRAGMA table_info(sales_invoice_items)').map(column => column.name)
   const itemTaxColumns = { tax_rate:'REAL NOT NULL DEFAULT 0', taxable_value:'REAL NOT NULL DEFAULT 0', cgst:'REAL NOT NULL DEFAULT 0', sgst:'REAL NOT NULL DEFAULT 0', igst:'REAL NOT NULL DEFAULT 0', total_tax:'REAL NOT NULL DEFAULT 0' }
   for (const [name, definition] of Object.entries(itemTaxColumns)) if (!itemColumns.includes(name)) db.exec(`ALTER TABLE sales_invoice_items ADD COLUMN ${name} ${definition}`)
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','7')")
+  const companyColumns = rows(db, 'PRAGMA table_info(companies)').map(column => column.name)
+  const companyProfileColumns = { address:'TEXT', phone:'TEXT', email:'TEXT', website:'TEXT', bank_name:'TEXT', bank_account_name:'TEXT', bank_account_number:'TEXT', bank_ifsc:'TEXT', bank_branch:'TEXT' }
+  if (storedSchemaVersion < 8) {
+    for (const [name, definition] of Object.entries(companyProfileColumns)) if (!companyColumns.includes(name)) db.exec(`ALTER TABLE companies ADD COLUMN ${name} ${definition}`)
+  }
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','8')")
 
   function persist() {
     if (!filePath) return
@@ -336,7 +350,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6, 7].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7, 8].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -360,6 +374,12 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         for (const [name, definition] of Object.entries(itemTaxColumns)) if (!itemColumns.includes(name)) candidate.exec(`ALTER TABLE sales_invoice_items ADD COLUMN ${name} ${definition}`)
         candidate.exec("UPDATE app_meta SET value='7' WHERE key='schema_version'")
       }
+      if (version < 8) {
+        const companyColumns = rows(candidate, 'PRAGMA table_info(companies)').map(column => column.name)
+        const companyProfileColumns = { address:'TEXT', phone:'TEXT', email:'TEXT', website:'TEXT', bank_name:'TEXT', bank_account_name:'TEXT', bank_account_number:'TEXT', bank_ifsc:'TEXT', bank_branch:'TEXT' }
+        for (const [name, definition] of Object.entries(companyProfileColumns)) if (!companyColumns.includes(name)) candidate.exec(`ALTER TABLE companies ADD COLUMN ${name} ${definition}`)
+        candidate.exec("UPDATE app_meta SET value='8' WHERE key='schema_version'")
+      }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
         throw new Error('Backup has no valid active company.')
@@ -381,7 +401,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       }
       candidate = null
       previous.close()
-      return { restored: true, company: rows(db, 'SELECT id,business_name,legal_name,currency,status,created_at FROM companies WHERE id=?', [activeCompanyId])[0] || null }
+      return { restored: true, company: rows(db, 'SELECT id,business_name,legal_name,address,phone,email,website,bank_name,bank_account_name,bank_account_number,bank_ifsc,bank_branch,currency,status,created_at FROM companies WHERE id=?', [activeCompanyId])[0] || null }
     } catch (error) {
       if (candidate) candidate.close()
       throw new Error('Backup restore failed: ' + error.message)
@@ -413,10 +433,10 @@ async function openLocalDatabase(filePath = null, encryption = null) {
 
   return Object.freeze({
     getCurrentCompany() {
-      return rows(db, 'SELECT id,business_name,legal_name,currency,status,created_at FROM companies WHERE id=?', [activeCompanyId])[0] || null
+      return rows(db, 'SELECT id,business_name,legal_name,address,phone,email,website,bank_name,bank_account_name,bank_account_number,bank_ifsc,bank_branch,currency,status,created_at FROM companies WHERE id=?', [activeCompanyId])[0] || null
     },
     listCompanies() {
-      return rows(db, `SELECT c.id,c.business_name,c.legal_name,c.currency,c.status,c.created_at,
+      return rows(db, `SELECT c.id,c.business_name,c.legal_name,c.address,c.phone,c.email,c.website,c.bank_name,c.bank_account_name,c.bank_account_number,c.bank_ifsc,c.bank_branch,c.currency,c.status,c.created_at,
         (SELECT COUNT(*) FROM company_gstins g WHERE g.company_id=c.id AND g.status='active') AS gstin_count
         FROM companies c ORDER BY c.created_at`)
     },
@@ -429,6 +449,31 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       recordAudit('company.created', 'company', company.id, { business_name: company.business_name })
       persist()
       return company
+    },
+    updateCompanyProfile(input = {}) {
+      const businessName = requiredText(input.business_name ?? input.businessName, 'Business name')
+      const legalName = optionalText(input.legal_name ?? input.legalName, 'Legal name', 180)
+      const address = optionalText(input.address, 'Business address', 1000)
+      const phone = optionalText(input.phone, 'Business phone', 30)
+      const email = optionalText(input.email, 'Business email', 160)
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Enter a valid business email address.')
+      const website = optionalText(input.website, 'Website', 200)
+      if (website) {
+        let parsed
+        try { parsed = new URL(website) } catch { throw new Error('Enter a complete website URL beginning with https:// or http://.') }
+        if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('Website URL must use HTTP or HTTPS.')
+      }
+      const bankName = optionalText(input.bank_name, 'Bank name', 120)
+      const bankAccountName = optionalText(input.bank_account_name, 'Account holder name', 120)
+      const bankAccountNumber = optionalText(input.bank_account_number, 'Bank account number', 34)
+      const bankIfsc = optionalText(input.bank_ifsc, 'IFSC', 11)?.toUpperCase() || null
+      if (bankIfsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(bankIfsc)) throw new Error('Enter a valid 11-character IFSC code.')
+      const bankBranch = optionalText(input.bank_branch, 'Bank branch', 120)
+      run(db, \`UPDATE companies SET business_name=?,legal_name=?,address=?,phone=?,email=?,website=?,bank_name=?,bank_account_name=?,bank_account_number=?,bank_ifsc=?,bank_branch=? WHERE id=?\`,
+        [businessName,legalName,address,phone,email,website,bankName,bankAccountName,bankAccountNumber,bankIfsc,bankBranch,activeCompanyId])
+      recordAudit('company.profile_updated', 'company', activeCompanyId, { business_name: businessName, bank_details_updated: Boolean(bankName || bankAccountName || bankAccountNumber || bankIfsc || bankBranch) })
+      persist()
+      return this.getCurrentCompany()
     },
     setActiveCompany(companyId) {
       const exists = rows(db, "SELECT id FROM companies WHERE id=? AND status='active'", [requiredText(companyId, 'Company ID', 80)])[0]
@@ -593,7 +638,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       return invoice
     },
     getSalesInvoice(invoiceId) {
-      const invoice = rows(db, `SELECT i.*,c.name AS customer_name,c.phone AS customer_phone,c.email AS customer_email,c.address AS customer_address,co.business_name,co.legal_name,fy.label AS financial_year,
+      const invoice = rows(db, `SELECT i.*,c.name AS customer_name,c.phone AS customer_phone,c.email AS customer_email,c.address AS customer_address,co.business_name,co.legal_name,co.address AS company_address,co.phone AS company_phone,co.email AS company_email,co.website AS company_website,co.bank_name,co.bank_account_name,co.bank_account_number,co.bank_ifsc,co.bank_branch,fy.label AS financial_year,
         COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0) AS received_amount,
         ROUND(i.total_amount-COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0),2) AS outstanding_amount,
         CASE WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)<=0 THEN 'unpaid'

@@ -9,6 +9,12 @@ Latest validation: GitHub Actions run 41701463978 passed on commit `8577d8e89d99
 - Multi-company, company-wise financial year and GST settings are implemented on `rename-to-bizora` in open PR #2; the PR remains unmerged.
 - This repository is a development foundation, not a production-ready ERP.
 
+## Company profile
+- Active company profile stores business/trade name, legal name, address, phone, email, website and optional bank details (account holder, account number, IFSC and branch).
+- Profile changes are company-scoped, audited and included in encrypted backups; email, website and IFSC formats are validated.
+- Sales invoice preview prints saved company address/contact details and optional bank payment details.
+- Database schema version 8 upgrades existing local databases and supported encrypted backups without discarding records.
+
 ## Offline data foundation
 - SQL.js database is stored in Electron's per-user application data folder.
 - Database snapshots are encrypted through Electron safeStorage before disk writes; the app refuses plaintext disk writes if secure storage is unavailable. Earlier plaintext development databases are imported and rewritten in encrypted form on startup.
@@ -44,7 +50,7 @@ Latest validation: GitHub Actions run 41701463978 passed on commit `8577d8e89d99
 - Windows installer and real Windows 10/11 installation have not yet been validated.
 
 ## Next milestones
-1. Finish invoice PDF/print layout, item HSN/SAC and product-level tax defaults; validate invoice tax treatment with a qualified GST professional.
+1. Add product/item HSN/SAC and product-level tax defaults; validate invoice tax treatment with a qualified GST professional.
 2. Add purchase-side GST and supplier payment/payables accounting.
 3. Add role permissions and enforce explicit company/GSTIN/financial-year selection before posting tax transactions.
 4. Test Windows encryption recovery, backup restore and crash recovery on Windows 10/11.
