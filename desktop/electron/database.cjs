@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS financial_years (
   CHECK (start_date <= end_date)
 );
 CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id, start_date);
+CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active';
 CREATE TABLE IF NOT EXISTS company_tax_settings (
   company_id TEXT PRIMARY KEY REFERENCES companies(id),
   gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK (gst_enabled IN (0,1)),
