@@ -3,6 +3,23 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const crypto = require('node:crypto')
+
+const testKey = Buffer.alloc(32, 23)
+const testEncryption = {
+  encrypt(data) {
+    const iv = crypto.randomBytes(12)
+    const cipher = crypto.createCipheriv('aes-256-gcm', testKey, iv)
+    return Buffer.concat([iv, cipher.getAuthTag(), cipher.update(data), cipher.final()])
+  },
+  decrypt(data) {
+    const iv = data.subarray(0, 12)
+    const tag = data.subarray(12, 28)
+    const decipher = crypto.createDecipheriv('aes-256-gcm', testKey, iv)
+    decipher.setAuthTag(tag)
+    return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()])
+  }
+}
 const { openLocalDatabase } = require('../electron/database.cjs')
 
 test('creates customers and products and records append-only audit events', async () => {
@@ -19,10 +36,13 @@ test('creates customers and products and records append-only audit events', asyn
 test('persists records after reopening the local database', async () => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'bizora-db-'))
   const file = path.join(folder, 'bizora.sqlite')
-  const first = await openLocalDatabase(file)
+  const first = await openLocalDatabase(file, testEncryption)
   first.createCustomer({ name: 'Persistent Customer' })
   first.close()
-  const second = await openLocalDatabase(file)
+  const stored = fs.readFileSync(file)
+  assert.equal(stored.subarray(0, Buffer.byteLength('BIZORA_DB_ENC_V1\\n')).toString(), 'BIZORA_DB_ENC_V1\\n')
+  assert.equal(stored.includes(Buffer.from('Persistent Customer')), false)
+  const second = await openLocalDatabase(file, testEncryption)
   assert.equal(second.listCustomers()[0].name, 'Persistent Customer')
   second.close()
   fs.rmSync(folder, { recursive: true, force: true })
