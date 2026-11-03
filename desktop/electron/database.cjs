@@ -293,6 +293,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     let candidate
     try {
       candidate = new SQL.Database(new Uint8Array(encryption.decrypt(snapshot.subarray(encryptedPrefix.length))))
+      candidate.exec('PRAGMA foreign_keys = ON;')
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
@@ -527,9 +528,11 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         const fy = rows(db, "SELECT id,start_date,end_date FROM financial_years WHERE id=? AND company_id=? AND status='active'", [invoice.financial_year_id,activeCompanyId])[0]
         if (!fy || invoice.invoice_date < fy.start_date || invoice.invoice_date > fy.end_date) throw new Error('The invoice financial year is no longer active. Select the correct financial year before posting.')
         const items = rows(db,'SELECT * FROM sales_invoice_items WHERE invoice_id=? AND company_id=?',[id,activeCompanyId])
-        for (const item of items) {
-          const stock = rows(db,'SELECT p.opening_stock + COALESCE(SUM(sm.quantity_delta),0) AS available FROM products p LEFT JOIN stock_movements sm ON sm.product_id=p.id AND sm.company_id=p.company_id WHERE p.id=? AND p.company_id=? GROUP BY p.id',[item.product_id,activeCompanyId])[0]?.available ?? 0
-          if (stock < item.quantity) throw new Error('Insufficient stock for ' + item.description + '. Available: ' + stock + ', required: ' + item.quantity + '.')
+        const requiredByProduct = new Map()
+        for (const item of items) requiredByProduct.set(item.product_id, (requiredByProduct.get(item.product_id) || 0) + item.quantity)
+        for (const [productId, required] of requiredByProduct) {
+          const stock = rows(db,'SELECT p.opening_stock + COALESCE(SUM(sm.quantity_delta),0) AS available FROM products p LEFT JOIN stock_movements sm ON sm.product_id=p.id AND sm.company_id=p.company_id WHERE p.id=? AND p.company_id=? GROUP BY p.id',[productId,activeCompanyId])[0]?.available ?? 0
+          if (stock < required) throw new Error('Insufficient stock. Available: ' + stock + ', required: ' + required + '.')
         }
         const postedAt = new Date().toISOString()
         for (const item of items) run(db,'INSERT INTO stock_movements (id,company_id,product_id,movement_type,reference_type,reference_id,reference_item_id,quantity_delta,unit_cost,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
@@ -617,9 +620,11 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         const bill=rows(db,"SELECT * FROM purchase_bills WHERE id=? AND company_id=? AND status='posted'",[id,activeCompanyId])[0]
         if(!bill) throw new Error('Only a posted purchase bill can be reversed.')
         const items=rows(db,'SELECT * FROM purchase_bill_items WHERE bill_id=? AND company_id=?',[id,activeCompanyId])
-        for(const item of items){
-          const available=rows(db,'SELECT p.opening_stock + COALESCE(SUM(sm.quantity_delta),0) AS available FROM products p LEFT JOIN stock_movements sm ON sm.product_id=p.id AND sm.company_id=p.company_id WHERE p.id=? AND p.company_id=? GROUP BY p.id',[item.product_id,activeCompanyId])[0]?.available??0
-          if(available<item.quantity) throw new Error('Cannot reverse purchase; some purchased stock has already been sold or consumed.')
+        const reverseByProduct = new Map()
+        for(const item of items) reverseByProduct.set(item.product_id,(reverseByProduct.get(item.product_id)||0)+item.quantity)
+        for(const [productId,required] of reverseByProduct){
+          const available=rows(db,'SELECT p.opening_stock + COALESCE(SUM(sm.quantity_delta),0) AS available FROM products p LEFT JOIN stock_movements sm ON sm.product_id=p.id AND sm.company_id=p.company_id WHERE p.id=? AND p.company_id=? GROUP BY p.id',[productId,activeCompanyId])[0]?.available??0
+          if(available<required) throw new Error('Cannot reverse purchase; some purchased stock has already been sold or consumed.')
         }
         const at=new Date().toISOString()
         for(const item of items) run(db,'INSERT INTO stock_movements (id,company_id,product_id,movement_type,reference_type,reference_id,reference_item_id,quantity_delta,unit_cost,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',[randomUUID(),activeCompanyId,item.product_id,'purchase_reversal','purchase_bill',id,item.id,-item.quantity,item.unit_cost,at])
