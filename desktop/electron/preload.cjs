@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('bizora', Object.freeze({
     postSalesInvoice: id => ipcRenderer.invoke('db:invoices:post', id),
     reverseSalesInvoice: (id, reason) => ipcRenderer.invoke('db:invoices:reverse', id, reason),
     listPurchaseBills: limit => ipcRenderer.invoke('db:purchases:list', limit),
+    listPurchasePayments: (billId, limit) => ipcRenderer.invoke('db:purchases:payments:list', billId, limit),
+    recordPurchasePayment: input => ipcRenderer.invoke('db:purchases:payments:create', input),
     createPurchaseBillDraft: input => ipcRenderer.invoke('db:purchases:create-draft', input),
     getPurchaseBill: id => ipcRenderer.invoke('db:purchases:get', id),
     postPurchaseBill: id => ipcRenderer.invoke('db:purchases:post', id),

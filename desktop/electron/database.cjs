@@ -176,6 +176,22 @@ CREATE TABLE IF NOT EXISTS purchase_bill_items (
   line_total REAL NOT NULL CHECK(line_total >= 0)
 );
 CREATE INDEX IF NOT EXISTS purchase_bill_items_bill_idx ON purchase_bill_items(bill_id);
+CREATE TABLE IF NOT EXISTS purchase_payments (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL REFERENCES companies(id),
+  bill_id TEXT NOT NULL REFERENCES purchase_bills(id),
+  payment_number TEXT NOT NULL,
+  payment_date TEXT NOT NULL,
+  amount REAL NOT NULL CHECK(amount > 0),
+  payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),
+  reference TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(company_id,payment_number)
+);
+CREATE INDEX IF NOT EXISTS purchase_payments_bill_idx ON purchase_payments(company_id,bill_id,payment_date);
+CREATE TRIGGER IF NOT EXISTS purchase_payments_no_update BEFORE UPDATE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries are immutable.'); END;
+CREATE TRIGGER IF NOT EXISTS purchase_payments_no_delete BEFORE DELETE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries cannot be deleted.'); END;
 CREATE TABLE IF NOT EXISTS stock_movements (
   id TEXT PRIMARY KEY,
   company_id TEXT NOT NULL REFERENCES companies(id),
@@ -319,7 +335,15 @@ async function openLocalDatabase(filePath = null, encryption = null) {
   if (storedSchemaVersion < 8) {
     for (const [name, definition] of Object.entries(companyProfileColumns)) if (!companyColumns.includes(name)) db.exec(`ALTER TABLE companies ADD COLUMN ${name} ${definition}`)
   }
-  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','8')")
+  if (storedSchemaVersion < 9) db.exec(`CREATE TABLE IF NOT EXISTS purchase_payments (
+    id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), bill_id TEXT NOT NULL REFERENCES purchase_bills(id),
+    payment_number TEXT NOT NULL, payment_date TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),
+    payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),
+    reference TEXT, notes TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,payment_number)
+  ); CREATE INDEX IF NOT EXISTS purchase_payments_bill_idx ON purchase_payments(company_id,bill_id,payment_date);
+  CREATE TRIGGER IF NOT EXISTS purchase_payments_no_update BEFORE UPDATE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries are immutable.'); END;
+  CREATE TRIGGER IF NOT EXISTS purchase_payments_no_delete BEFORE DELETE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries cannot be deleted.'); END;`)
+  run(db, "INSERT OR REPLACE INTO app_meta (key,value) VALUES ('schema_version','9')")
 
   function persist() {
     if (!filePath) return
@@ -350,7 +374,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6, 7, 8].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7, 8, 9].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -380,11 +404,22 @@ async function openLocalDatabase(filePath = null, encryption = null) {
         for (const [name, definition] of Object.entries(companyProfileColumns)) if (!companyColumns.includes(name)) candidate.exec(`ALTER TABLE companies ADD COLUMN ${name} ${definition}`)
         candidate.exec("UPDATE app_meta SET value='8' WHERE key='schema_version'")
       }
+      if (version < 9) {
+        candidate.exec(`CREATE TABLE IF NOT EXISTS purchase_payments (
+          id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), bill_id TEXT NOT NULL REFERENCES purchase_bills(id),
+          payment_number TEXT NOT NULL, payment_date TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0),
+          payment_method TEXT NOT NULL CHECK(payment_method IN ('cash','upi','bank_transfer','cheque','card','other')),
+          reference TEXT, notes TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,payment_number)
+        ); CREATE INDEX IF NOT EXISTS purchase_payments_bill_idx ON purchase_payments(company_id,bill_id,payment_date);
+        CREATE TRIGGER IF NOT EXISTS purchase_payments_no_update BEFORE UPDATE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries are immutable.'); END;
+        CREATE TRIGGER IF NOT EXISTS purchase_payments_no_delete BEFORE DELETE ON purchase_payments BEGIN SELECT RAISE(ABORT,'Supplier payment entries cannot be deleted.'); END;
+        UPDATE app_meta SET value='9' WHERE key='schema_version';`)
+      }
       const selected = rows(candidate, "SELECT value FROM app_meta WHERE key='active_company_id'")[0]?.value
       if (!selected || !rows(candidate, "SELECT id FROM companies WHERE id=? AND status='active'", [selected]).length) {
         throw new Error('Backup has no valid active company.')
       }
-      const requiredTables = ['companies','customers','products','company_gstins','financial_years','company_tax_settings','vendors','sales_invoices','sales_invoice_items','purchase_bills','purchase_bill_items','stock_movements','sales_receipts','audit_events']
+      const requiredTables = ['companies','customers','products','company_gstins','financial_years','company_tax_settings','vendors','sales_invoices','sales_invoice_items','purchase_bills','purchase_bill_items','purchase_payments','stock_movements','sales_receipts','audit_events']
       const actualTables = rows(candidate, "SELECT name FROM sqlite_master WHERE type='table'").map(item => item.name)
       if (!requiredTables.every(name => actualTables.includes(name))) throw new Error('Backup is missing required BIZORA data tables.')
       const previous = db
@@ -722,7 +757,11 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     },
     listPurchaseBills(limit = 100) {
       const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit) || 100)))
-      return rows(db,`SELECT b.id,b.bill_number,b.bill_date,b.status,b.total_amount,b.created_at,v.name AS vendor_name,fy.label AS financial_year
+      return rows(db,`SELECT b.id,b.bill_number,b.bill_date,b.status,b.total_amount,b.created_at,v.name AS vendor_name,fy.label AS financial_year,
+        COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0) AS paid_amount,
+        ROUND(b.total_amount-COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0),2) AS outstanding_amount,
+        CASE WHEN COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0)<=0 THEN 'unpaid'
+          WHEN COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0)>=b.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
         FROM purchase_bills b JOIN vendors v ON v.id=b.vendor_id JOIN financial_years fy ON fy.id=b.financial_year_id
         WHERE b.company_id=? ORDER BY b.bill_date DESC,b.created_at DESC LIMIT ?`,[activeCompanyId,safeLimit])
     },
@@ -771,10 +810,50 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       })
     },
     getPurchaseBill(billId) {
-      const bill=rows(db,`SELECT b.*,v.name AS vendor_name,fy.label AS financial_year FROM purchase_bills b JOIN vendors v ON v.id=b.vendor_id JOIN financial_years fy ON fy.id=b.financial_year_id WHERE b.id=? AND b.company_id=?`,[requiredText(billId,'Purchase bill ID',80),activeCompanyId])[0]
+      const bill=rows(db,`SELECT b.*,v.name AS vendor_name,fy.label AS financial_year,
+        COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0) AS paid_amount,
+        ROUND(b.total_amount-COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0),2) AS outstanding_amount,
+        CASE WHEN COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0)<=0 THEN 'unpaid'
+          WHEN COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0)>=b.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
+        FROM purchase_bills b JOIN vendors v ON v.id=b.vendor_id JOIN financial_years fy ON fy.id=b.financial_year_id WHERE b.id=? AND b.company_id=?`,[requiredText(billId,'Purchase bill ID',80),activeCompanyId])[0]
       if(!bill) return null
       bill.items=rows(db,'SELECT id,product_id,description,quantity,unit_cost,line_total FROM purchase_bill_items WHERE bill_id=? AND company_id=?',[bill.id,activeCompanyId])
       return bill
+    },
+    listPurchasePayments(billId = null, limit = 200) {
+      const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 200)))
+      if (billId) return rows(db,`SELECT p.*,b.bill_number,v.name AS vendor_name FROM purchase_payments p
+        JOIN purchase_bills b ON b.id=p.bill_id AND b.company_id=p.company_id JOIN vendors v ON v.id=b.vendor_id
+        WHERE p.company_id=? AND p.bill_id=? ORDER BY p.payment_date DESC,p.created_at DESC LIMIT ?`,
+        [activeCompanyId,requiredText(billId,'Purchase bill ID',80),safeLimit])
+      return rows(db,`SELECT p.*,b.bill_number,v.name AS vendor_name FROM purchase_payments p
+        JOIN purchase_bills b ON b.id=p.bill_id AND b.company_id=p.company_id JOIN vendors v ON v.id=b.vendor_id
+        WHERE p.company_id=? ORDER BY p.payment_date DESC,p.created_at DESC LIMIT ?`,[activeCompanyId,safeLimit])
+    },
+    recordPurchasePayment(input = {}) {
+      const billId = requiredText(input.billId ?? input.purchaseBillId,'Purchase bill ID',80)
+      const bill = rows(db,`SELECT id,bill_number,total_amount,status FROM purchase_bills WHERE id=? AND company_id=?`,[billId,activeCompanyId])[0]
+      if (!bill) throw new Error('Purchase bill was not found in the active company.')
+      if (bill.status !== 'posted') throw new Error('Only a posted purchase bill can receive a supplier payment.')
+      const paymentDate = requiredText(input.paymentDate,'Payment date',10)
+      if (!validISODate(paymentDate)) throw new Error('Enter a valid payment date in YYYY-MM-DD format.')
+      const paymentNumber = requiredText(input.paymentNumber ?? input.payment_number,'Payment number',50)
+      const amount = nonNegativeNumber(input.amount,'Payment amount')
+      if (amount <= 0) throw new Error('Payment amount must be greater than zero.')
+      const method = requiredText(input.paymentMethod ?? input.payment_method ?? 'upi','Payment method',30)
+      if (!['cash','upi','bank_transfer','cheque','card','other'].includes(method)) throw new Error('Choose a supported payment method.')
+      const previous = Number(rows(db,'SELECT COALESCE(SUM(amount),0) AS total FROM purchase_payments WHERE bill_id=? AND company_id=?',[billId,activeCompanyId])[0]?.total || 0)
+      const outstanding = Math.round((Number(bill.total_amount)-previous)*100)/100
+      if (amount > outstanding + 0.000001) throw new Error('Payment exceeds the outstanding supplier balance.')
+      const payment = { id:randomUUID(),company_id:activeCompanyId,bill_id:billId,payment_number:paymentNumber,payment_date:paymentDate,
+        amount:Math.round(amount*100)/100,payment_method:method,reference:optionalText(input.reference,'Payment reference',100),
+        notes:optionalText(input.notes,'Notes',500),created_at:new Date().toISOString() }
+      withTransaction(()=>{
+        run(db,'INSERT INTO purchase_payments (id,company_id,bill_id,payment_number,payment_date,amount,payment_method,reference,notes,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+          [payment.id,payment.company_id,payment.bill_id,payment.payment_number,payment.payment_date,payment.amount,payment.payment_method,payment.reference,payment.notes,payment.created_at])
+        recordAudit('purchase_payment.recorded','purchase_payment',payment.id,{bill_id:billId,payment_number:paymentNumber,amount:payment.amount})
+      })
+      return { ...payment, ...this.getPurchaseBill(billId) }
     },
     reversePurchaseBill(billId, reason) {
       const id=requiredText(billId,'Purchase bill ID',80)

@@ -146,6 +146,7 @@ test('creates encrypted backup and restores the saved company data', async () =>
   source.saveCompanyTaxSettings({ gstEnabled: true, defaultTaxMode: 'exclusive', placeOfSupplyStateCode: '08', defaultGstinId: gstin.id })
   const purchase = source.createPurchaseBillDraft({ vendorId: vendor.id, billNumber: 'SUP-001', billDate: '2026-05-01', items: [{ productId: product.id, quantity: 5, unitCost: 8 }] })
   source.postPurchaseBill(purchase.id)
+  source.recordPurchasePayment({ billId: purchase.id, paymentNumber: 'BK-PAY-001', paymentDate: '2026-05-01', amount: 10, paymentMethod: 'upi' })
   source.createSalesInvoiceDraft({ customerId: customer.id, invoiceNumber: 'INV-001', invoiceDate: '2026-05-02', items: [{ productId: product.id, quantity: 2, unitPrice: 20 }] })
   const backup = source.createEncryptedBackup()
   assert.equal(backup.subarray(0, Buffer.byteLength('BIZORA_DB_ENC_V1\\n')).toString(), 'BIZORA_DB_ENC_V1\\n')
@@ -162,6 +163,8 @@ test('creates encrypted backup and restores the saved company data', async () =>
   assert.equal(target.getCompanyTaxSettings().place_of_supply_state_code, '08')
   assert.equal(target.listVendors()[0].name, 'Backup Supplier')
   assert.equal(target.listPurchaseBills()[0].status, 'posted')
+  assert.equal(target.listPurchaseBills()[0].paid_amount, 10)
+  assert.equal(target.listPurchasePayments(purchase.id).length, 1)
   assert.equal(target.listSalesInvoices()[0].status, 'draft')
   assert.equal(target.getProductStock(product.id).current_stock, 5)
   assert.equal(target.listStockMovements().length, 1)
@@ -231,6 +234,25 @@ async function createTradingFixture() {
   db.setActiveFinancialYear(fy.id)
   return { db, company, customer, vendor, product, fy }
 }
+
+test('supplier payments track purchase bill balances, support partial payment and reject overpayment', async () => {
+  const { db, vendor, product } = await createTradingFixture()
+  const bill = db.createPurchaseBillDraft({ vendorId: vendor.id, billNumber: 'PAY-TEST-01', billDate: '2026-04-10', items: [{ productId: product.id, quantity: 4, unitCost: 25 }] })
+  assert.throws(() => db.recordPurchasePayment({ billId: bill.id, paymentNumber: 'SUP-PAY-0', paymentDate: '2026-04-11', amount: 10 }), /Only a posted purchase bill/)
+  db.postPurchaseBill(bill.id)
+  assert.equal(db.getPurchaseBill(bill.id).payment_status, 'unpaid')
+  db.recordPurchasePayment({ billId: bill.id, paymentNumber: 'SUP-PAY-1', paymentDate: '2026-04-11', amount: 40, paymentMethod: 'upi', reference: 'UTR-1' })
+  assert.equal(db.getPurchaseBill(bill.id).paid_amount, 40)
+  assert.equal(db.getPurchaseBill(bill.id).outstanding_amount, 60)
+  assert.equal(db.getPurchaseBill(bill.id).payment_status, 'part_paid')
+  assert.equal(db.listPurchasePayments(bill.id).length, 1)
+  assert.throws(() => db.recordPurchasePayment({ billId: bill.id, paymentNumber: 'SUP-PAY-2', paymentDate: '2026-04-12', amount: 61 }), /exceeds the outstanding/)
+  db.recordPurchasePayment({ billId: bill.id, paymentNumber: 'SUP-PAY-3', paymentDate: '2026-04-12', amount: 60, paymentMethod: 'bank_transfer' })
+  assert.equal(db.getPurchaseBill(bill.id).payment_status, 'paid')
+  assert.equal(db.getPurchaseBill(bill.id).outstanding_amount, 0)
+  assert.equal(db.listPurchasePayments(bill.id).length, 2)
+  db.close()
+})
 
 test('purchase posting adds stock and sale posting reduces it using immutable movements', async () => {
   const { db, vendor, customer, product } = await createTradingFixture()
