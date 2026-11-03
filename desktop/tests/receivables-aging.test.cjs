@@ -6,7 +6,7 @@ test('groups outstanding invoices into aging buckets', () => {
   const result = summarizeAging([
     { total_amount: 100, received_amount: 20, due_date: '2026-11-04' },
     { total_amount: 200, received_amount: 0, due_date: '2026-10-20' },
-    { total_amount: 300, received_amount: 100, due_date: '2026-09-01' },
+    { total_amount: 300, received_amount: 100, due_date: '2026-09-20' },
     { total_amount: 400, received_amount: 0, due_date: '2026-07-01' },
     { total_amount: 500, received_amount: 0, due_date: '2026-05-01' }
   ], '2026-11-04')
