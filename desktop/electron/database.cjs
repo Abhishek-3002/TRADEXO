@@ -909,7 +909,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
           WHEN COALESCE((SELECT SUM(p.amount) FROM purchase_payments p WHERE p.bill_id=b.id AND p.company_id=b.company_id),0)>=b.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
         FROM purchase_bills b JOIN vendors v ON v.id=b.vendor_id JOIN financial_years fy ON fy.id=b.financial_year_id WHERE b.id=? AND b.company_id=?`,[requiredText(billId,'Purchase bill ID',80),activeCompanyId])[0]
       if(!bill) return null
-      bill.items=rows(db,'SELECT id,product_id,description,hsn_sac,quantity,unit_cost,line_total FROM purchase_bill_items WHERE bill_id=? AND company_id=?',[bill.id,activeCompanyId])
+      bill.items=rows(db,'SELECT id,product_id,description,hsn_sac,quantity,unit_cost,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax FROM purchase_bill_items WHERE bill_id=? AND company_id=?',[bill.id,activeCompanyId])
       return bill
     },
     listPurchasePayments(billId = null, limit = 200) {
