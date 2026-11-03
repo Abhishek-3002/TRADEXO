@@ -17,10 +17,8 @@ jobs:
     name: Website production build
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Install website dependencies
@@ -30,19 +28,20 @@ jobs:
         working-directory: website
         run: npm run build
 
-  desktop-build:
-    name: Desktop renderer production build
+  desktop-check:
+    name: Desktop build and database tests
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Install desktop dependencies
         working-directory: desktop
         run: npm install
+      - name: Test offline database
+        working-directory: desktop
+        run: npm test
       - name: Build desktop renderer
         working-directory: desktop
         run: npm run build
