@@ -2,7 +2,7 @@
 
 Updated: 2026-11-04
 
-Latest feature validation: financial-year/GST milestone passed GitHub Actions run 41695978013. Sales/purchase/stock-ledger implementation is now in the branch; its latest test and build run is in progress after a test expectation correction.
+Latest validation: GitHub Actions pull-request run 41697305119 passed on commit `5170abe0acf5707de6629a9d5fb94377a305a2ae` — website production build, desktop renderer build and all 17 database tests passed.
 
 ## Verified baseline
 - Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
@@ -35,7 +35,7 @@ Latest feature validation: financial-year/GST milestone passed GitHub Actions ru
 - GSTIN format validation is not government verification or tax advice.
 - Product SKU uniqueness is scoped to each company by a schema migration; the migration and cross-company SKU test pass in CI.
 - GST/tax calculations, tax invoice PDF, payment/receivable ledgers, purchase accounting, role permissions, sync conflict resolution, license enforcement and signed updater are not complete.
-- Purchase bill and sales invoice reversal flows exist in the database API; customer-facing reversal UI and audit review screen are still pending.
+- Invoice and purchase registers include reason-required reversal actions; reversal adds compensating stock entries rather than deleting the posted document.
 - SQL.js persists a complete database snapshot on each write; performance must be load-tested before larger deployments.
 - Windows installer and real Windows 10/11 installation have not yet been validated.
 
