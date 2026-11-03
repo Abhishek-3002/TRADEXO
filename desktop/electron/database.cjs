@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS audit_events_created_idx ON audit_events(created_at);
-INSERT OR REPLACE INTO app_meta (key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO app_meta (key, value) VALUES ('schema_version', '1');
 `
 
 function requiredText(value, label, max = 120) {
