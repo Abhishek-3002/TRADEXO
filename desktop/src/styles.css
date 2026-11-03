@@ -10,3 +10,38 @@
 
 .db-field select{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px;background:var(--bg);color:var(--text);font:11px 'DM Sans';outline:none}.db-field select:focus{border-color:#8b6bef}
 .trade-items{margin:16px 0}.trade-item{display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(110px,1fr)) auto;gap:10px;align-items:end;padding:13px 0;border-bottom:1px solid var(--line)}.trade-total{display:flex;justify-content:space-between;align-items:center;padding:13px 0 17px;font-size:11px}.trade-total b{font:800 19px Manrope}.trade-item .db-refresh{margin-bottom:1px}.trade-item button{white-space:nowrap}@media(max-width:760px){.trade-item{grid-template-columns:1fr 1fr}.trade-item .db-field:first-child{grid-column:1/-1}}
+
+
+/* BIZORA motion system */
+:root{scroll-behavior:smooth}
+.app{transition:background-color .28s ease,color .28s ease}
+.sidebar>button,.side-bottom>button,.quick,.db-save,.db-refresh,.locked button,.shortcut-trigger,.help{transition:transform .18s ease,background-color .2s ease,border-color .2s ease,box-shadow .2s ease,opacity .2s ease}
+.sidebar>button:hover,.side-bottom>button:hover,.quick:hover{transform:translateX(3px)}
+.db-save:hover,.locked button:hover,.upgrade button:hover{transform:translateY(-2px);box-shadow:0 8px 22px #8061e233}
+.panel,.stats>div{transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
+.stats>div:hover,.panel:hover{border-color:#b8a8ef;box-shadow:0 12px 30px #44317a0d}
+.content>.welcome{animation:bizora-rise .45s cubic-bezier(.2,.7,.2,1) both}
+.content>.stats{animation:bizora-rise .5s .05s cubic-bezier(.2,.7,.2,1) both}
+.content>.panels,.content>.locked,.content>.db-workspace,.content>.placeholder{animation:bizora-rise .42s .08s cubic-bezier(.2,.7,.2,1) both}
+.db-workspace>.panel,.db-workspace>.panels>.panel{animation:bizora-rise .38s both}
+.db-workspace>.panel:nth-child(2){animation-delay:.04s}
+.db-workspace>.panel:nth-child(3){animation-delay:.08s}
+.command-backdrop{position:fixed;inset:0;z-index:1000;background:#10101b99;backdrop-filter:blur(9px);display:flex;justify-content:center;align-items:flex-start;padding:12vh 18px 24px;animation:bizora-fade .16s ease both}
+.command-dialog{width:min(620px,100%);max-height:76vh;overflow:auto;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:17px;box-shadow:0 28px 100px #0005;animation:bizora-pop .2s cubic-bezier(.2,.8,.2,1) both}
+.command-search{display:flex;align-items:center;gap:12px;padding:17px 19px;border-bottom:1px solid var(--line);font-size:22px;color:#8b6bef}
+.command-search input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--text);font:500 14px 'DM Sans'}
+.command-search kbd,.command-results kbd,.command-footer kbd{font:600 9px 'DM Sans';color:var(--muted);background:var(--soft);border:1px solid var(--line);padding:5px 7px;border-radius:6px;white-space:nowrap}
+.command-results{padding:8px;max-height:270px;overflow:auto}
+.command-results button{width:100%;display:flex;justify-content:space-between;align-items:center;padding:12px;border:0;border-radius:9px;background:transparent;color:var(--text);font:600 11px 'DM Sans';text-align:left;cursor:pointer}
+.command-results button:hover{background:var(--soft);color:#8061e2}
+.command-results p{padding:15px;color:var(--muted);font-size:11px}
+.command-footer{border-top:1px solid var(--line);padding:14px 18px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px}
+.command-footer>b{grid-column:1/-1;font-size:8px;letter-spacing:1.3px;color:var(--muted)}
+.command-footer>span{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:9px;color:var(--muted)}
+.shortcut-trigger{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:8px;padding:8px 10px;font:600 9px 'DM Sans';cursor:pointer}
+.shortcut-trigger:hover,.help:hover{border-color:#a994ee;color:#8061e2;transform:translateY(-1px)}
+@keyframes bizora-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes bizora-fade{from{opacity:0}to{opacity:1}}
+@keyframes bizora-pop{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:650px){.shortcut-trigger{font-size:0}.shortcut-trigger:after{content:'⌘';font-size:12px}.command-footer{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
