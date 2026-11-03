@@ -274,3 +274,11 @@ test('rejects duplicate invoice numbers without leaving partial invoice or item 
   assert.equal(db.listSalesInvoices().length, 1)
   db.close()
 })
+
+test('rejects impossible invoice, due and supplier bill dates', async () => {
+  const { db, customer, vendor, product } = await createTradingFixture()
+  assert.throws(() => db.createSalesInvoiceDraft({ customerId: customer.id, invoiceNumber: 'DATE-1', invoiceDate: '2026-02-30', items: [{ productId: product.id, quantity: 1, unitPrice: 1 }] }), /valid invoice date/)
+  assert.throws(() => db.createSalesInvoiceDraft({ customerId: customer.id, invoiceNumber: 'DATE-2', invoiceDate: '2026-04-12', dueDate: '2026-02-30', items: [{ productId: product.id, quantity: 1, unitPrice: 1 }] }), /valid due date/)
+  assert.throws(() => db.createPurchaseBillDraft({ vendorId: vendor.id, billNumber: 'DATE-3', billDate: '2026-02-30', items: [{ productId: product.id, quantity: 1, unitCost: 1 }] }), /valid supplier bill date/)
+  db.close()
+})
