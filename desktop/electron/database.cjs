@@ -593,12 +593,12 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       return invoice
     },
     getSalesInvoice(invoiceId) {
-      const invoice = rows(db, `SELECT i.*,c.name AS customer_name,fy.label AS financial_year,
+      const invoice = rows(db, `SELECT i.*,c.name AS customer_name,c.phone AS customer_phone,c.email AS customer_email,c.address AS customer_address,co.business_name,co.legal_name,fy.label AS financial_year,
         COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0) AS received_amount,
         ROUND(i.total_amount-COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0),2) AS outstanding_amount,
         CASE WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)<=0 THEN 'unpaid'
           WHEN COALESCE((SELECT SUM(r.amount) FROM sales_receipts r WHERE r.invoice_id=i.id AND r.company_id=i.company_id),0)>=i.total_amount THEN 'paid' ELSE 'part_paid' END AS payment_status
-        FROM sales_invoices i JOIN customers c ON c.id=i.customer_id JOIN financial_years fy ON fy.id=i.financial_year_id WHERE i.id=? AND i.company_id=?`, [requiredText(invoiceId,'Invoice ID',80),activeCompanyId])[0]
+        FROM sales_invoices i JOIN customers c ON c.id=i.customer_id JOIN financial_years fy ON fy.id=i.financial_year_id JOIN companies co ON co.id=i.company_id WHERE i.id=? AND i.company_id=?`, [requiredText(invoiceId,'Invoice ID',80),activeCompanyId])[0]
       if (!invoice) return null
       invoice.items = rows(db, 'SELECT id,product_id,description,quantity,unit_price,line_total,tax_rate,taxable_value,cgst,sgst,igst,total_tax FROM sales_invoice_items WHERE invoice_id=? AND company_id=?', [invoice.id,activeCompanyId])
       return invoice
