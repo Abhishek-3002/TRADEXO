@@ -40,6 +40,8 @@ function registerDatabaseHandlers() {
   ipcMain.handle('db:vendors:list', (_event, limit) => localDb.listVendors(limit))
   ipcMain.handle('db:vendors:create', (_event, input) => localDb.createVendor(input))
   ipcMain.handle('db:invoices:list', (_event, limit) => localDb.listSalesInvoices(limit))
+  ipcMain.handle('db:receipts:list', (_event, invoiceId, limit) => localDb.listSalesReceipts(invoiceId, limit))
+  ipcMain.handle('db:receipts:create', (_event, input) => localDb.recordSalesReceipt(input))
   ipcMain.handle('db:invoices:create-draft', (_event, input) => localDb.createSalesInvoiceDraft(input))
   ipcMain.handle('db:invoices:get', (_event, id) => localDb.getSalesInvoice(id))
   ipcMain.handle('db:invoices:post', (_event, id) => localDb.postSalesInvoice(id))
