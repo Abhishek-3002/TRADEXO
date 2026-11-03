@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, safeStorage } = require('electron')
+const { app, BrowserWindow, ipcMain, safeStorage, dialog } = require('electron')
+const fs = require('node:fs')
 const path = require('node:path')
 const { openLocalDatabase } = require('./database.cjs')
 const isDev = !app.isPackaged
@@ -31,6 +32,41 @@ function registerDatabaseHandlers() {
   ipcMain.handle('db:customers:create', (_event, input) => localDb.createCustomer(input))
   ipcMain.handle('db:products:list', (_event, limit) => localDb.listProducts(limit))
   ipcMain.handle('db:products:create', (_event, input) => localDb.createProduct(input))
+  ipcMain.handle('db:backup:create', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Save encrypted BIZORA backup',
+      defaultPath: path.join(app.getPath('documents'), 'BIZORA-backup-' + new Date().toISOString().slice(0, 10) + '.bizora-backup'),
+      filters: [{ name: 'BIZORA encrypted backup', extensions: ['bizora-backup'] }]
+    })
+    if (result.canceled || !result.filePath) return { cancelled: true }
+    const data = localDb.createEncryptedBackup()
+    const temporary = result.filePath + '.tmp'
+    fs.writeFileSync(temporary, data, { flag: 'w', mode: 0o600 })
+    fs.renameSync(temporary, result.filePath)
+    return { cancelled: false, filePath: result.filePath }
+  })
+  ipcMain.handle('db:backup:restore', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const selected = await dialog.showOpenDialog(win, {
+      title: 'Choose a BIZORA encrypted backup',
+      properties: ['openFile'],
+      filters: [{ name: 'BIZORA encrypted backup', extensions: ['bizora-backup'] }]
+    })
+    if (selected.canceled || !selected.filePaths?.[0]) return { cancelled: true }
+    const confirmation = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Cancel', 'Restore backup'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Replace current BIZORA data?',
+      message: 'Restoring replaces the current local database with the selected backup. Export a fresh backup first if you need the current data.'
+    })
+    if (confirmation.response !== 1) return { cancelled: true }
+    const data = fs.readFileSync(selected.filePaths[0])
+    const result = localDb.restoreEncryptedBackup(data)
+    return { cancelled: false, ...result }
+  })
 }
 
 app.whenReady().then(async () => {
