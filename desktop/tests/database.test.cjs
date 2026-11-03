@@ -61,3 +61,16 @@ test('stores GSTIN registrations against the selected company and validates form
   assert.throws(() => db.addCompanyGstin({ gstin: 'INVALID' }), /valid 15-character GSTIN/)
   db.close()
 })
+
+test('allows the same SKU in different companies but prevents duplicates within one company', async () => {
+  const db = await openLocalDatabase()
+  const first = db.getCurrentCompany()
+  db.createProduct({ name: 'Item A', sku: 'SHARED-01', sellingPrice: 10, openingStock: 1 })
+  assert.throws(() => db.createProduct({ name: 'Duplicate in A', sku: 'SHARED-01' }))
+  const second = db.createCompany({ businessName: 'Another Company' })
+  db.setActiveCompany(second.id)
+  assert.doesNotThrow(() => db.createProduct({ name: 'Item B', sku: 'SHARED-01', sellingPrice: 20, openingStock: 2 }))
+  db.setActiveCompany(first.id)
+  assert.equal(db.listProducts().length, 1)
+  db.close()
+})
