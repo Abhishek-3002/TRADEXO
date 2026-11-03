@@ -21,6 +21,12 @@ function createWindow() {
 
 function registerDatabaseHandlers() {
   ipcMain.handle('db:summary', () => localDb.getSummary())
+  ipcMain.handle('db:company:current', () => localDb.getCurrentCompany())
+  ipcMain.handle('db:companies:list', () => localDb.listCompanies())
+  ipcMain.handle('db:companies:create', (_event, input) => localDb.createCompany(input))
+  ipcMain.handle('db:company:set-active', (_event, id) => localDb.setActiveCompany(id))
+  ipcMain.handle('db:company:gstins:list', (_event, id) => localDb.listCompanyGstins(id))
+  ipcMain.handle('db:company:gstins:add', (_event, input) => localDb.addCompanyGstin(input))
   ipcMain.handle('db:customers:list', (_event, limit) => localDb.listCustomers(limit))
   ipcMain.handle('db:customers:create', (_event, input) => localDb.createCustomer(input))
   ipcMain.handle('db:products:list', (_event, limit) => localDb.listProducts(limit))
