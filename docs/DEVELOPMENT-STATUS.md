@@ -9,6 +9,12 @@ Latest validation: GitHub Actions run 41705333359 passed on commit `e284eeba4ee0
 - Multi-company, company-wise financial year and GST settings are implemented on `rename-to-bizora` in open PR #2; the PR remains unmerged.
 - This repository is a development foundation, not a production-ready ERP.
 
+## Purchase-side GST
+- Vendor records can store and validate a supplier GSTIN; purchase bills use supplier state and active company place-of-supply state to calculate intra-state CGST/SGST or inter-state IGST.
+- Purchase bill and line records persist taxable value, tax split, GST rate, supplier GSTIN and supply type; registered vendor purchases use the shared paise-rounded tax engine.
+- Unregistered vendor bills remain non-GST in this first pass; input-credit accounting, reverse-charge handling, GST return reconciliation and professional statutory review remain outstanding.
+- Database schema version 11 migrates existing purchase records and supported encrypted backups.
+
 ## HSN / SAC item codes
 - Product catalogue supports optional 2/4/6/8-digit HSN/SAC codes with validation.
 - HSN/SAC is copied into sales invoice and purchase bill line records so later product edits do not rewrite historic document lines.
@@ -54,14 +60,14 @@ Latest validation: GitHub Actions run 41705333359 passed on commit `e284eeba4ee0
 - GSTIN format validation is not government verification or tax advice. GST calculation requires the user to choose the applicable rate for each invoice line and correctly configure seller GSTIN and place-of-supply state; calculations are not a substitute for a tax professional's review.
 - Product SKU uniqueness is scoped to each company by a schema migration; the migration and cross-company SKU test pass in CI.
 - GST calculation is now integrated into sales invoice draft creation, but tax invoice PDF, e-invoice, e-way bill, GST portal filing, purchase-side GST accounting and full statutory validation are not complete.
-- Purchase-side GST accounting, supplier payable ageing/summary, purchase accounting, role permissions, sync conflict resolution, license enforcement and signed updater are not complete.
+- Input GST credit accounting, reverse-charge handling, GST return reconciliation, supplier payable ageing/summary, purchase accounting, role permissions, sync conflict resolution, license enforcement and signed updater are not complete.
 - Invoice and purchase registers include reason-required reversal actions; reversal adds compensating stock entries rather than deleting the posted document.
 - SQL.js persists a complete database snapshot on each write; performance must be load-tested before larger deployments.
 - Windows installer and real Windows 10/11 installation have not yet been validated.
 
 ## Next milestones
 1. Add product/item HSN/SAC and product-level tax defaults; validate invoice tax treatment with a qualified GST professional.
-2. Add purchase-side GST, supplier payable ageing/summary and accounting integration.
+2. Add input GST credit accounting, supplier payable ageing/summary and purchase accounting integration.
 3. Add role permissions and enforce explicit company/GSTIN/financial-year selection before posting tax transactions.
 4. Test Windows encryption recovery, backup restore and crash recovery on Windows 10/11.
 5. Implement offline-first sync with idempotency, conflict handling and server-side authorization.
