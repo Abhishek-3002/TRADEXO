@@ -1,0 +1,36 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { openLocalDatabase } = require('../electron/database.cjs')
+
+test('creates customers and products and records append-only audit events', async () => {
+  const db = await openLocalDatabase()
+  const customer = db.createCustomer({ name: 'Test Customer', phone: '9876543210' })
+  const product = db.createProduct({ name: 'Test Item', sku: 'TEST-01', sellingPrice: 25, openingStock: 4 })
+  assert.equal(db.listCustomers()[0].id, customer.id)
+  assert.equal(db.listProducts()[0].id, product.id)
+  assert.deepEqual(db.getSummary(), { customers: 1, products: 1, audit_events: 2 })
+  assert.equal(typeof db.deleteCustomer, 'undefined')
+  db.close()
+})
+
+test('persists records after reopening the local database', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'bizora-db-'))
+  const file = path.join(folder, 'bizora.sqlite')
+  const first = await openLocalDatabase(file)
+  first.createCustomer({ name: 'Persistent Customer' })
+  first.close()
+  const second = await openLocalDatabase(file)
+  assert.equal(second.listCustomers()[0].name, 'Persistent Customer')
+  second.close()
+  fs.rmSync(folder, { recursive: true, force: true })
+})
+
+test('rejects invalid customer and product values', async () => {
+  const db = await openLocalDatabase()
+  assert.throws(() => db.createCustomer({ name: ' ' }), /Customer name is required/)
+  assert.throws(() => db.createProduct({ name: 'Item', sellingPrice: -1 }), /non-negative/)
+  db.close()
+})
