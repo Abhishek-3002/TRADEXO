@@ -265,27 +265,39 @@ function BackupWorkspace(){
 
 
 function SecurityGate({ api, onUnlocked }) {
- const [status,setStatus]=useState(null),[pin,setPin]=useState(''),[confirm,setConfirm]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ const [status,setStatus]=useState(null),[pin,setPin]=useState(''),[confirm,setConfirm]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[recovering,setRecovering]=useState(false),[recoveryInput,setRecoveryInput]=useState(''),[recoveryCode,setRecoveryCode]=useState('')
  useEffect(()=>{api.getStatus().then(setStatus).catch(e=>setError(e.message||'Security check failed.'))},[api])
  async function submit(e){
   e.preventDefault();setError('');setBusy(true)
   try{
-   if(!status.configured){if(pin!==confirm)throw new Error('PIN confirmation does not match.');await api.setupPin(pin)}
-   else await api.unlock(pin)
+   if(!status.configured){
+    if(pin!==confirm)throw new Error('PIN confirmation does not match.')
+    const result=await api.setupPin(pin)
+    setRecoveryCode(result.recoveryCode)
+    return
+   }else if(recovering){
+    const result=await api.recoverPin(recoveryInput,pin)
+    setRecoveryCode(result.recoveryCode)
+    return
+   }else await api.unlock(pin)
    onUnlocked(await api.getStatus())
   }catch(e){setError(e.message||'Could not unlock BIZORA.')}
   finally{setBusy(false)}
  }
  if(!status)return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}>Checking BIZORA security…</div>
+ if(recoveryCode)return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:24,background:'#f0eff8',fontFamily:'Segoe UI,sans-serif'}}><section style={{width:'min(100%,440px)',padding:32,borderRadius:22,background:'#fff',boxShadow:'0 20px 70px #24204a22'}}><h1 style={{marginTop:0}}>Save your recovery code</h1><p>This code is shown only once. Store it somewhere safe and separate from this PC. It can reset your PIN if you forget it.</p><textarea readOnly value={recoveryCode} onFocus={e=>e.target.select()} style={{width:'100%',boxSizing:'border-box',minHeight:92,padding:14,border:'1px solid #ccc',borderRadius:10,fontFamily:'monospace',fontSize:15,overflowWrap:'anywhere'}}/><button type="button" onClick={()=>navigator.clipboard?.writeText(recoveryCode)} style={{width:'100%',padding:12,marginTop:12,border:'1px solid #6848e8',borderRadius:10,background:'#fff',color:'#6848e8',fontWeight:700}}>Copy recovery code</button><button type="button" onClick={()=>onUnlocked({configured:true,unlocked:true})} style={{width:'100%',padding:14,marginTop:12,border:0,borderRadius:10,background:'#6848e8',color:'#fff',fontWeight:700}}>I have saved my recovery code</button></section></div>
  return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:24,background:'#f0eff8',fontFamily:'Segoe UI,sans-serif'}}>
   <form onSubmit={submit} style={{width:'min(100%,400px)',padding:32,borderRadius:22,background:'#fff',boxShadow:'0 20px 70px #24204a22'}}>
    <h1 style={{marginTop:0}}>BIZORA Security</h1>
-   <p>{status.configured?'Enter your PIN to unlock your business workspace.':'Create a 6–12 digit PIN to protect your business workspace.'}</p>
+   <p>{recovering?'Enter your recovery code and choose a new PIN.':status.configured?'Enter your PIN to unlock your business workspace.':'Create a 6–12 digit PIN to protect your business workspace.'}</p>
    <input autoFocus required minLength={6} maxLength={12} type="password" inputMode="numeric" value={pin} onChange={e=>setPin(e.target.value.replace(/[^0-9]/g,'').slice(0,12))} placeholder={status.configured?'Enter PIN':'Create PIN'} style={{width:'100%',boxSizing:'border-box',padding:14,border:'1px solid #ccc',borderRadius:10,fontSize:18,letterSpacing:4}}/>
+   {recovering&&<input required value={recoveryInput} onChange={e=>setRecoveryInput(e.target.value.trim())} placeholder="One-time recovery code" style={{width:'100%',boxSizing:'border-box',padding:14,marginTop:12,border:'1px solid #ccc',borderRadius:10,fontFamily:'monospace'}}/>}
    {!status.configured&&<input required minLength={6} maxLength={12} type="password" inputMode="numeric" value={confirm} onChange={e=>setConfirm(e.target.value.replace(/[^0-9]/g,'').slice(0,12))} placeholder="Confirm PIN" style={{width:'100%',boxSizing:'border-box',padding:14,marginTop:12,border:'1px solid #ccc',borderRadius:10,fontSize:18,letterSpacing:4}}/>}
    {error&&<p style={{color:'#b42318'}}>{error}</p>}
-   <button disabled={busy||pin.length<6||(!status.configured&&confirm.length<6)} style={{width:'100%',padding:14,marginTop:18,border:0,borderRadius:10,background:'#6848e8',color:'#fff',fontWeight:700}}>{busy?'Please wait…':status.configured?'Unlock':'Set PIN'}</button>
-   <small style={{display:'block',marginTop:16,color:'#777'}}>PIN hash is salted and stored using Windows secure storage. Recovery has not yet been implemented.</small>
+   <button disabled={busy||pin.length<6||(!status.configured&&confirm.length<6)} style={{width:'100%',padding:14,marginTop:18,border:0,borderRadius:10,background:'#6848e8',color:'#fff',fontWeight:700}}>{busy?'Please wait…':recovering?'Reset PIN':status.configured?'Unlock':'Set PIN'}</button>
+   {status.configured&&!recovering&&<button type="button" onClick={()=>{setRecovering(true);setPin('');setError('')}} style={{width:'100%',padding:10,marginTop:10,border:0,background:'transparent',color:'#6848e8'}}>Forgot PIN? Use recovery code</button>}
+   {recovering&&<button type="button" onClick={()=>{setRecovering(false);setRecoveryInput('');setPin('');setError('')}} style={{width:'100%',padding:10,marginTop:8,border:0,background:'transparent',color:'#666'}}>Back to PIN unlock</button>}
+   <small style={{display:'block',marginTop:16,color:'#777'}}>PIN hash is salted and protected by Windows secure storage. Keep your one-time recovery code somewhere safe and separate from this computer.</small>
   </form>
  </div>
 }
