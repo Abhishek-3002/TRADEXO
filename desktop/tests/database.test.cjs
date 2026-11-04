@@ -51,7 +51,7 @@ test('creates customers and products and records append-only audit events', asyn
 })
 
 test('persists records after reopening the local database', async () => {
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'bizora-db-'))
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'tradexo-db-'))
   const file = path.join(folder, 'bizora.sqlite')
   const first = await openLocalDatabase(file, testEncryption)
   first.createCustomer({ name: 'Persistent Customer' })
@@ -92,19 +92,19 @@ test('saves a validated company profile and keeps details isolated by company', 
   const db = await openLocalDatabase()
   const first = db.getCurrentCompany()
   const saved = db.updateCompanyProfile({
-    business_name: 'BIZORA Trading',
-    legal_name: 'BIZORA Trading Private Limited',
+    business_name: 'TRADEXO Trading',
+    legal_name: 'TRADEXO Trading Private Limited',
     address: 'Pugal Phanta, Bikaner, Rajasthan',
     phone: '9876543210',
     email: 'accounts@example.com',
     website: 'https://example.com',
     bank_name: 'Test Bank',
-    bank_account_name: 'BIZORA Trading',
+    bank_account_name: 'TRADEXO Trading',
     bank_account_number: '123456789012',
     bank_ifsc: 'abcd0123456',
     bank_branch: 'Bikaner'
   })
-  assert.equal(saved.business_name, 'BIZORA Trading')
+  assert.equal(saved.business_name, 'TRADEXO Trading')
   assert.equal(saved.address, 'Pugal Phanta, Bikaner, Rajasthan')
   assert.equal(saved.bank_ifsc, 'ABCD0123456')
   assert.equal(db.listCompanies()[0].bank_account_number, '123456789012')
@@ -168,7 +168,7 @@ test('allows the same SKU in different companies but prevents duplicates within 
 })
 
 test('refuses to save a disk database without an encryption provider', async () => {
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'bizora-no-plain-'))
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'tradexo-no-plain-'))
   const file = path.join(folder, 'bizora.sqlite')
   await assert.rejects(() => openLocalDatabase(file), /encryption is required/)
   assert.equal(fs.existsSync(file), false)
