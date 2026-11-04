@@ -1,4 +1,4 @@
-# BIZORA Commercial Desktop Architecture
+# TRADEXO Commercial Desktop Architecture
 
 Status: implementation specification. This document is not a claim that cloud sync, licensing, backup, or production auto-update are already live.
 
