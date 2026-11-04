@@ -3,7 +3,7 @@ const { promisify } = require('node:util')
 const scrypt = promisify(crypto.scrypt)
 
 function isValidPin(pin) {
-  return typeof pin === 'string' && /^\\d{6,12}$/.test(pin)
+  return typeof pin === 'string' && /^\d{6,12}$/.test(pin)
 }
 
 async function hashPin(pin, salt) {
