@@ -13,19 +13,19 @@ const features = [
 function WebsiteApp() {
   const [dark, setDark] = useState(false)
   const [menu, setMenu] = useState(false)
-  const [form, setForm] = useState({ name:'', mobile:'', business:'', plan:'Premium', message:'' })
+  const [form, setForm] = useState({ name:'', mobile:'', business:'', plan:'Business', message:'' })
   const [sent, setSent] = useState(false)
   const whatsapp = import.meta.env.VITE_SUPPORT_WHATSAPP || '7357204736'
   const submit = (e) => {
     e.preventDefault()
-    const id = 'BIZ-' + Date.now().toString().slice(-8)
+    const id = 'TX-' + Date.now().toString().slice(-8)
     const msg = `TRADEXO enquiry ${id}%0AName: ${encodeURIComponent(form.name)}%0AMobile: ${encodeURIComponent(form.mobile)}%0ABusiness: ${encodeURIComponent(form.business)}%0APlan: ${encodeURIComponent(form.plan)}%0AMessage: ${encodeURIComponent(form.message)}`
     window.open(`https://wa.me/91${whatsapp}?text=${msg}`, '_blank', 'noopener,noreferrer')
     setSent(true)
   }
   return <div className={dark ? 'site dark' : 'site'}>
     <header className="nav wrap">
-      <a className="brand" href="#"><span className="brand-mark">B</span><span>BIZO<span className="violet">RA</span><small>BY FIXBYTE INDIA</small></span></a>
+      <a className="brand" href="#"><span className="brand-mark">T</span><span>TRADE<span className="violet">XO</span><small>BY FIXBYTE INDIA</small></span></a>
       <button className="mobile-menu" onClick={()=>setMenu(!menu)} aria-label="Toggle menu">{menu?<X/>:<Menu/>}</button>
       <nav className={menu?'open':''}><a href="#features" onClick={()=>setMenu(false)}>Features</a><a href="#plans" onClick={()=>setMenu(false)}>Plans</a><a href="#about" onClick={()=>setMenu(false)}>About</a><a href="#contact" className="nav-cta" onClick={()=>setMenu(false)}>Talk to Specialist <ArrowUpRight size={16}/></a></nav>
       <button className="theme" onClick={()=>setDark(!dark)} aria-label="Toggle theme">{dark?<Sun size={18}/>:<Moon size={18}/>}</button>
@@ -55,10 +55,10 @@ function WebsiteApp() {
       </div></section>
       <section className="section wrap about" id="about"><div className="about-card"><div className="eyebrow">MADE FOR BUSINESS OWNERS</div><h2>Clarity in your workday.<br/><span className="muted">Control in your hands.</span></h2><p>TRADEXO is a FIXBYTE INDIA product focused on bringing everyday business operations into one dependable workspace. The first release is planned for Windows 10 and 11.</p><div className="about-points"><span><ShieldCheck/> Designed with data safety in mind</span><span><Check/> Basic workflows designed for offline use</span></div></div></section>
       <section className="contact-section" id="contact"><div className="wrap contact-layout"><div><div className="eyebrow">LET'S TALK BUSINESS</div><h2>Need the right setup<br/>for your business?</h2><p>Tell us a little about your business. Our specialist can help you understand the plans and next steps.</p><div className="contact-info"><b>WhatsApp / Call</b><a href={`https://wa.me/91${whatsapp}`} target="_blank" rel="noreferrer">+91 {whatsapp} <ArrowUpRight size={15}/></a><small>Available 10:00 AM – 8:00 PM</small></div></div>
-        <form className="contact-form" onSubmit={submit}><h3>Talk to a Specialist</h3><p>Submitting opens a WhatsApp draft. You must press Send in WhatsApp.</p><label>Your name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Enter your name"/></label><label>Mobile number<input required inputMode="tel" pattern="[0-9+ ()-]{8,18}" value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="Your contact number"/></label><label>Business type<input required value={form.business} onChange={e=>setForm({...form,business:e.target.value})} placeholder="Retail, distribution, services..."/></label><label>Interested plan<select value={form.plan} onChange={e=>setForm({...form,plan:e.target.value})}><option>Basic</option><option>Premium</option></select></label><label>Message (optional)<textarea rows="3" value={form.message} onChange={e=>setForm({...form,message:e.target.value})} placeholder="What would you like to manage?"/></label><button className="button primary full" type="submit">Continue on WhatsApp <ArrowUpRight size={16}/></button>{sent&&<small className="success">WhatsApp draft opened. Please review and press Send.</small>}</form>
+        <form className="contact-form" onSubmit={submit}><h3>Talk to a Specialist</h3><p>Submitting opens a WhatsApp draft. You must press Send in WhatsApp.</p><label>Your name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Enter your name"/></label><label>Mobile number<input required inputMode="tel" pattern="[0-9+ ()-]{8,18}" value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="Your contact number"/></label><label>Business type<input required value={form.business} onChange={e=>setForm({...form,business:e.target.value})} placeholder="Retail, distribution, services..."/></label><label>Interested plan<select value={form.plan} onChange={e=>setForm({...form,plan:e.target.value})}><option>Basic</option><option>Starter</option><option>Business</option><option>Enterprise</option></select></label><label>Message (optional)<textarea rows="3" value={form.message} onChange={e=>setForm({...form,message:e.target.value})} placeholder="What would you like to manage?"/></label><button className="button primary full" type="submit">Continue on WhatsApp <ArrowUpRight size={16}/></button>{sent&&<small className="success">WhatsApp draft opened. Please review and press Send.</small>}</form>
       </div></section>
     </main>
-    <footer><div className="wrap footer-inner"><a className="brand" href="#"><span className="brand-mark">B</span><span>BIZO<span className="violet">RA</span><small>BY FIXBYTE INDIA</small></span></a><span>© {new Date().getFullYear()} TRADEXO. All rights reserved.</span><b>Developed & Maintained by FIXBYTE INDIA</b></div></footer>
+    <footer><div className="wrap footer-inner"><a className="brand" href="#"><span className="brand-mark">T</span><span>TRADE<span className="violet">XO</span><small>BY FIXBYTE INDIA</small></span></a><span>© {new Date().getFullYear()} TRADEXO. All rights reserved.</span><b>Developed & Maintained by FIXBYTE INDIA</b></div></footer>
   </div>
 }
 export default function App() { return ['/admin','/admin/'].includes(window.location.pathname) ? <AdminPanel /> : <WebsiteApp /> }
