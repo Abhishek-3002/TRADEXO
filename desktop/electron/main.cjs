@@ -107,7 +107,7 @@ function registerSecurityHandlers() {
   handleAppIpc('security:get-status', () => ({ configured: Boolean(pinMetadata), unlocked }), { requiresUnlock: false })
   handleAppIpc('security:setup-pin', async (_event, pin) => {
     if (pinMetadata) throw new Error('A PIN is already configured.')
-    if (typeof pin !== 'string' || !/^\d{6,12}$/.test(pin)) throw new Error('PIN must contain 6 to 12 digits.')
+    if (!isValidPin(pin)) throw new Error('PIN must contain 6 to 12 digits.')
     const salt = crypto.randomBytes(16).toString('hex')
     const hash = (await hashPin(pin, salt)).toString('hex')
     savePinMetadata({ version: 1, salt, hash, failedPinAttempts: 0, blockedUntil: 0 })
@@ -119,7 +119,7 @@ function registerSecurityHandlers() {
   handleAppIpc('security:unlock', async (_event, pin) => {
     if (!pinMetadata) throw new Error('Set up your BIZORA PIN first.')
     if (Date.now() < blockedUntil) throw new Error('Too many incorrect attempts. Please wait before trying again.')
-    if (typeof pin !== 'string' || !/^\d{6,12}$/.test(pin)) throw new Error('Enter your 6 to 12 digit PIN.')
+    if (!isValidPin(pin)) throw new Error('Enter your 6 to 12 digit PIN.')
     const matches = await verifyPin(pin, pinMetadata.salt, pinMetadata.hash)
     if (!matches) {
       failedPinAttempts += 1
