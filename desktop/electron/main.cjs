@@ -128,7 +128,13 @@ function registerDatabaseHandlers() {
       message: 'Restoring replaces the current local database with the selected backup. Export a fresh backup first if you need the current data.'
     })
     if (confirmation.response !== 1) return { cancelled: true }
-    const data = fs.readFileSync(selected.filePaths[0])
+    const backupPath = selected.filePaths[0]
+    const backupStats = fs.statSync(backupPath)
+    const maxBackupBytes = 500 * 1024 * 1024
+    if (!backupStats.isFile()) throw new Error('Selected backup must be a regular file.')
+    if (backupStats.size > maxBackupBytes) throw new Error('Backup file exceeds the 500 MB safety limit.')
+    if (backupStats.size === 0) throw new Error('Selected backup file is empty.')
+    const data = fs.readFileSync(backupPath)
     const result = localDb.restoreEncryptedBackup(data)
     return { cancelled: false, ...result }
   })
