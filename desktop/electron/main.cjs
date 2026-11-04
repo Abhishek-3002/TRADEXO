@@ -21,7 +21,7 @@ function createWindow() {
 }
 
 function handleAppIpc(channel, handler) {
-  handleAppIpc(channel, (event, ...args) => {
+  ipcMain.handle(channel, (event, ...args) => {
     const frame = event.senderFrame
     if (!frame || frame !== event.sender.mainFrame) {
       throw new Error('Blocked IPC request from an untrusted frame.')
