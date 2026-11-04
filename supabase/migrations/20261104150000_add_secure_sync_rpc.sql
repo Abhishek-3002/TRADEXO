@@ -61,7 +61,7 @@ begin
        or nullif(v_event->>'entity_type', '') is null
        or nullif(v_event->>'entity_id', '') is null
        or nullif(v_event->>'operation', '') is null
-       or jsonb_typeof(v_event->'payload') <> 'object'
+       or jsonb_typeof(v_event->'payload') is distinct from 'object'
        or nullif(v_event->>'client_created_at', '') is null then
       raise exception 'Each event must include event_id, entity_type, entity_id, operation, object payload and client_created_at'
         using errcode = '22023';
