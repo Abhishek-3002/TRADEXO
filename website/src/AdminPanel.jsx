@@ -20,6 +20,8 @@ export default function AdminPanel() {
   const [tableErrors,setTableErrors] = useState({})
   const [loading,setLoading] = useState(false)
   const [search,setSearch] = useState('')
+  const [actionNotice,setActionNotice] = useState('')
+  const [busyId,setBusyId] = useState('')
 
   useEffect(() => {
     if (!supabase) return
@@ -40,8 +42,7 @@ export default function AdminPanel() {
     if (!owner || !supabase) return
     setLoading(true)
     setTableErrors({})
-    const names = Object.entries(tables)
-    const results = await Promise.all(names.map(async ([key,table]) => {
+    const results = await Promise.all(Object.entries(tables).map(async ([key,table]) => {
       const {data,error} = await supabase.from(table).select('*').order('created_at',{ascending:false}).limit(100)
       return [key,data || [],error?.message || null]
     }))
@@ -57,6 +58,27 @@ export default function AdminPanel() {
   const filtered = rows.filter(r => JSON.stringify(r).toLowerCase().includes(search.toLowerCase()))
   const title = sections.find(s=>s[0]===section)?.[1] || 'Overview'
 
+  async function activatePayment(payment) {
+    if (!window.confirm('Verify this payment and activate or renew the annual TRADEXO license?')) return
+    setBusyId(payment.id); setActionNotice('')
+    const {data,error} = await supabase.rpc('tx_admin_activate_payment',{p_payment_id:payment.id,p_device_limit:1})
+    setBusyId('')
+    if (error) return setActionNotice('Activation failed: '+error.message)
+    const result = Array.isArray(data) ? data[0] : data
+    setActionNotice('License activated. Key: '+(result?.license_key || 'Issued')+' | Plan: '+(result?.plan || '—')+' | Expiry: '+(result?.expires_at ? new Date(result.expires_at).toLocaleDateString() : '—'))
+    await load()
+  }
+
+  async function changeLicenseStatus(license,status) {
+    if (!window.confirm('Change license status to '+status+'?')) return
+    setBusyId(license.id); setActionNotice('')
+    const {error} = await supabase.rpc('tx_admin_set_license_status',{p_license_id:license.id,p_status:status})
+    setBusyId('')
+    if (error) return setActionNotice('Status update failed: '+error.message)
+    setActionNotice('License status updated to '+status+'.')
+    await load()
+  }
+
   async function login(e) {
     e.preventDefault(); setError('')
     if (!supabase) return setError('Admin connection is not configured. Add the Supabase website environment variables first.')
@@ -66,8 +88,7 @@ export default function AdminPanel() {
       await supabase.auth.signOut()
       return setError('Access denied. This account is not the TRADEXO Owner Admin.')
     }
-    setSession(data.session)
-    setPassword('')
+    setSession(data.session); setPassword('')
   }
 
   if (!session || !owner) return <div className="tx-admin-login"><form className="tx-login-card" onSubmit={login}>
@@ -83,14 +104,15 @@ export default function AdminPanel() {
 
   return <div className="tx-admin">
     <aside className="tx-sidebar"><a href="/" className="tx-admin-brand"><span className="tx-mark">T</span><span>TRADEXO<small>OWNER CONSOLE</small></span></a>
-      <div className="tx-nav-label">WORKSPACE</div>{sections.map(([id,label,Icon])=><button key={id} className={section===id?'active':''} onClick={()=>{setSection(id);setSearch('')}}><Icon size={18}/>{label}</button>)}
+      <div className="tx-nav-label">WORKSPACE</div>{sections.map(([id,label,Icon])=><button key={id} className={section===id?'active':''} onClick={()=>{setSection(id);setSearch('');setActionNotice('')}}><Icon size={18}/>{label}</button>)}
       <div className="tx-sidebar-bottom"><span>Signed in as Owner Admin</span><button onClick={()=>supabase.auth.signOut()}><LogOut size={17}/> Sign out</button></div>
     </aside>
     <main className="tx-admin-main"><header><div><span className="tx-kicker">TRADEXO MANAGEMENT</span><h1>{title}</h1></div><button className="tx-refresh" onClick={load} disabled={loading}><RefreshCw size={16}/> {loading?'Refreshing…':'Refresh'}</button></header>
-      {Object.keys(tableErrors).length>0 && <div className="tx-data-warning" role="alert"><AlertTriangle size={18}/><div><b>Some admin data could not be loaded.</b><p>{Object.entries(tableErrors).map(([key,message])=>`${tables[key]}: ${message}`).join(' • ')}</p><small>Apply the TRADEXO admin database migration and confirm the owner_admin role before relying on these records.</small></div></div>}
-      {section==='overview' ? <><div className="tx-stat-grid">{[['Customers',counts.customers],['Enquiries',counts.enquiries],['Payments',counts.payments],['Licenses',counts.licenses]].map(([n,v])=><article key={n}><span>{n}</span><strong>{v ?? '—'}</strong><small>{tableErrors[{Customers:'customers',Enquiries:'enquiries',Payments:'payments',Licenses:'licenses'}[n]]?'Could not load':'Latest 100 records'}</small></article>)}</div><div className="tx-welcome"><ShieldCheck size={28}/><div><h2>Owner control centre</h2><p>Review enquiries, customer records, payment status, software licenses and audit history. Customer records are read-only here; destructive deletion is not provided.</p></div></div><div className="tx-welcome tx-readonly"><LockKeyhole size={24}/><div><h2>License actions are not enabled yet</h2><p>This release provides secure owner sign-in and read-only record review. Payment verification, license issuance, renewal and suspension will be enabled only after their server-side authorization workflows are implemented.</p></div></div></> :
+      {Object.keys(tableErrors).length>0 && <div className="tx-data-warning" role="alert"><AlertTriangle size={18}/><div><b>Some admin data could not be loaded.</b><p>{Object.entries(tableErrors).map(([key,message])=>tables[key]+': '+message).join(' • ')}</p><small>Check the TRADEXO database migration and owner_admin role.</small></div></div>}
+      {section==='overview' ? <><div className="tx-stat-grid">{[['Customers',counts.customers],['Enquiries',counts.enquiries],['Payments',counts.payments],['Licenses',counts.licenses]].map(([n,v])=><article key={n}><span>{n}</span><strong>{v ?? '—'}</strong><small>Latest 100 records loaded</small></article>)}</div><div className="tx-welcome"><ShieldCheck size={28}/><div><h2>Owner control centre</h2><p>Review enquiries, customer records, payment status, software licenses and audit history. Customer records are read-only here; destructive deletion is not provided.</p></div></div><div className="tx-welcome tx-readonly"><LockKeyhole size={24}/><div><h2>Payment-to-license workflow</h2><p>From Payments, verify an eligible annual INR payment to issue or renew a license. From Licenses, suspend or reactivate a license. Actions are checked server-side and recorded in the audit log.</p></div></div></> :
       <section className="tx-data-card"><div className="tx-data-head"><div><h2>{title}</h2><span>{rows.length} records loaded (up to 100)</span></div><div className="tx-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search records"/></div></div>
-      {loading ? <p className="tx-empty">Loading records…</p> : tableErrors[section] ? <p className="tx-empty">This table could not be loaded. See the warning above.</p> : filtered.length===0 ? <p className="tx-empty">No records found yet.</p> : <div className="tx-table-wrap"><table><thead><tr>{Object.keys(filtered[0]).slice(0,7).map(k=><th key={k}>{k.replaceAll('_',' ')}</th>)}</tr></thead><tbody>{filtered.map((r,i)=><tr key={r.id || i}>{Object.keys(r).slice(0,7).map(k=><td key={k}>{typeof r[k]==='object' ? JSON.stringify(r[k]) : String(r[k] ?? '—')}</td>)}</tr>)}</tbody></table></div>}
+      {actionNotice && <div className="tx-action-notice" role="status">{actionNotice}</div>}
+      {loading ? <p className="tx-empty">Loading records…</p> : tableErrors[section] ? <p className="tx-empty">This table could not be loaded. See the warning above.</p> : filtered.length===0 ? <p className="tx-empty">No records found yet.</p> : <div className="tx-table-wrap"><table><thead><tr>{Object.keys(filtered[0]).slice(0,7).map(k=><th key={k}>{k.replaceAll('_',' ')}</th>)}{(section==='payments'||section==='licenses')&&<th>Admin action</th>}</tr></thead><tbody>{filtered.map((r,i)=><tr key={r.id || i}>{Object.keys(r).slice(0,7).map(k=><td key={k}>{typeof r[k]==='object' ? JSON.stringify(r[k]) : String(r[k] ?? '—')}</td>)}{section==='payments'&&<td>{r.status==='pending'?<button className="tx-row-action" disabled={busyId===r.id} onClick={()=>activatePayment(r)}>{busyId===r.id?'Working…':'Verify & Activate'}</button>:<span className="tx-muted">No action</span>}</td>}{section==='licenses'&&<td>{r.status==='active'?<button className="tx-row-action danger" disabled={busyId===r.id} onClick={()=>changeLicenseStatus(r,'suspended')}>Suspend</button>:r.status==='suspended'?<button className="tx-row-action" disabled={busyId===r.id} onClick={()=>changeLicenseStatus(r,'active')}>Reactivate</button>:<span className="tx-muted">No action</span>}</td>}</tr>)}</tbody></table></div>}
       </section>}
       <footer className="tx-admin-footer">Developed & Maintained by FIXBYTE INDIA • TRADEXO Admin</footer>
     </main>
