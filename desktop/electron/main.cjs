@@ -3,8 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const crypto = require('node:crypto')
-const { promisify } = require('node:util')
-const scrypt = promisify(crypto.scrypt)
+const { hashPin, verifyPin, isValidPin } = require('./security.cjs')
 const { openLocalDatabase } = require('./database.cjs')
 const isDev = !app.isPackaged
 let localDb
@@ -31,10 +30,6 @@ function loadPinMetadata() {
   const parsed = JSON.parse(safeStorage.decryptString(fs.readFileSync(PIN_FILE())))
   if (!parsed || parsed.version !== 1 || typeof parsed.salt !== 'string' || typeof parsed.hash !== 'string') throw new Error('BIZORA security settings are damaged. Contact support.')
   return parsed
-}
-
-async function hashPin(pin, salt) {
-  return scrypt(pin, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 })
 }
 
 function lockApplication() {
@@ -125,9 +120,8 @@ function registerSecurityHandlers() {
     if (!pinMetadata) throw new Error('Set up your BIZORA PIN first.')
     if (Date.now() < blockedUntil) throw new Error('Too many incorrect attempts. Please wait before trying again.')
     if (typeof pin !== 'string' || !/^\d{6,12}$/.test(pin)) throw new Error('Enter your 6 to 12 digit PIN.')
-    const candidate = await hashPin(pin, pinMetadata.salt)
-    const expected = Buffer.from(pinMetadata.hash, 'hex')
-    if (candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) {
+    const matches = await verifyPin(pin, pinMetadata.salt, pinMetadata.hash)
+    if (!matches) {
       failedPinAttempts += 1
       if (failedPinAttempts >= 5) blockedUntil = Date.now() + Math.min(3600000, 30000 * (2 ** (failedPinAttempts - 5)))
       savePinMetadata({ ...pinMetadata, failedPinAttempts, blockedUntil })
@@ -142,11 +136,10 @@ function registerSecurityHandlers() {
   }, { requiresUnlock: false })
   handleAppIpc('security:change-pin', async (_event, currentPin, newPin) => {
     if (!pinMetadata || !unlocked) throw new Error('Unlock BIZORA before changing your PIN.')
-    if (typeof currentPin !== 'string' || !/^\\d{6,12}$/.test(currentPin)) throw new Error('Enter your current 6–12 digit PIN.')
-    if (typeof newPin !== 'string' || !/^\\d{6,12}$/.test(newPin)) throw new Error('New PIN must contain 6 to 12 digits.')
-    const currentHash = await hashPin(currentPin, pinMetadata.salt)
-    const expectedHash = Buffer.from(pinMetadata.hash, 'hex')
-    if (currentHash.length !== expectedHash.length || !crypto.timingSafeEqual(currentHash, expectedHash)) {
+    if (!isValidPin(currentPin)) throw new Error('Enter your current 6–12 digit PIN.')
+    if (!isValidPin(newPin)) throw new Error('New PIN must contain 6 to 12 digits.')
+    const currentMatches = await verifyPin(currentPin, pinMetadata.salt, pinMetadata.hash)
+    if (!currentMatches) {
       failedPinAttempts += 1
       if (failedPinAttempts >= 5) blockedUntil = Date.now() + Math.min(3600000, 30000 * (2 ** (failedPinAttempts - 5)))
       savePinMetadata({ ...pinMetadata, failedPinAttempts, blockedUntil })
