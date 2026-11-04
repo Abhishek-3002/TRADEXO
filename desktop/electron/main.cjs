@@ -16,7 +16,7 @@ const IDLE_LOCK_MS = 5 * 60 * 1000
 const PIN_FILE = () => path.join(app.getPath('userData'), 'security.dat')
 
 function savePinMetadata(metadata) {
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable. BIZORA cannot safely save PIN settings on this device.')
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable. TRADEXO cannot safely save PIN settings on this device.')
   const encrypted = safeStorage.encryptString(JSON.stringify(metadata))
   const temporary = PIN_FILE() + '.tmp'
   fs.writeFileSync(temporary, encrypted, { flag: 'w', mode: 0o600 })
@@ -26,9 +26,9 @@ function savePinMetadata(metadata) {
 
 function loadPinMetadata() {
   if (!fs.existsSync(PIN_FILE())) return null
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable. BIZORA cannot safely read PIN settings on this device.')
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable. TRADEXO cannot safely read PIN settings on this device.')
   const parsed = JSON.parse(safeStorage.decryptString(fs.readFileSync(PIN_FILE())))
-  if (!parsed || parsed.version !== 1 || typeof parsed.salt !== 'string' || typeof parsed.hash !== 'string') throw new Error('BIZORA security settings are damaged. Contact support.')
+  if (!parsed || parsed.version !== 1 || typeof parsed.salt !== 'string' || typeof parsed.hash !== 'string') throw new Error('TRADEXO security settings are damaged. Contact support.')
   return parsed
 }
 
@@ -97,7 +97,7 @@ function handleAppIpc(channel, handler, { requiresUnlock = true } = {}) {
       throw new Error('Blocked IPC request from an untrusted application origin.')
     }
 
-    if (requiresUnlock && !unlocked) throw new Error('BIZORA is locked. Unlock with your PIN to continue.')
+    if (requiresUnlock && !unlocked) throw new Error('TRADEXO is locked. Unlock with your PIN to continue.')
     if (requiresUnlock) resetIdleLock()
     return handler(event, ...args)
   })
@@ -120,7 +120,7 @@ function registerSecurityHandlers() {
     return { configured: true, unlocked: true, recoveryCode }
   }, { requiresUnlock: false })
   handleAppIpc('security:unlock', async (_event, pin) => {
-    if (!pinMetadata) throw new Error('Set up your BIZORA PIN first.')
+    if (!pinMetadata) throw new Error('Set up your TRADEXO PIN first.')
     if (Date.now() < blockedUntil) throw new Error('Too many incorrect attempts. Please wait before trying again.')
     if (!isValidPin(pin)) throw new Error('Enter your 6 to 12 digit PIN.')
     const matches = await verifyPin(pin, pinMetadata.salt, pinMetadata.hash)
@@ -160,7 +160,7 @@ function registerSecurityHandlers() {
     return { configured: true, unlocked: true, recoveryCode: nextRecoveryCode }
   }, { requiresUnlock: false })
   handleAppIpc('security:change-pin', async (_event, currentPin, newPin) => {
-    if (!pinMetadata || !unlocked) throw new Error('Unlock BIZORA before changing your PIN.')
+    if (!pinMetadata || !unlocked) throw new Error('Unlock TRADEXO before changing your PIN.')
     if (!isValidPin(currentPin)) throw new Error('Enter your current 6–12 digit PIN.')
     if (!isValidPin(newPin)) throw new Error('New PIN must contain 6 to 12 digits.')
     const currentMatches = await verifyPin(currentPin, pinMetadata.salt, pinMetadata.hash)
@@ -229,9 +229,9 @@ function registerDatabaseHandlers() {
   handleAppIpc('db:backup:create', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showSaveDialog(win, {
-      title: 'Save encrypted BIZORA backup',
-      defaultPath: path.join(app.getPath('documents'), 'BIZORA-backup-' + new Date().toISOString().slice(0, 10) + '.bizora-backup'),
-      filters: [{ name: 'BIZORA encrypted backup', extensions: ['bizora-backup'] }]
+      title: 'Save encrypted TRADEXO backup',
+      defaultPath: path.join(app.getPath('documents'), 'TRADEXO-backup-' + new Date().toISOString().slice(0, 10) + '.bizora-backup'),
+      filters: [{ name: 'TRADEXO encrypted backup', extensions: ['bizora-backup'] }]
     })
     if (result.canceled || !result.filePath) return { cancelled: true }
     const data = localDb.createEncryptedBackup()
@@ -243,9 +243,9 @@ function registerDatabaseHandlers() {
   handleAppIpc('db:backup:restore', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const selected = await dialog.showOpenDialog(win, {
-      title: 'Choose a BIZORA encrypted backup',
+      title: 'Choose a TRADEXO encrypted backup',
       properties: ['openFile'],
-      filters: [{ name: 'BIZORA encrypted backup', extensions: ['bizora-backup'] }]
+      filters: [{ name: 'TRADEXO encrypted backup', extensions: ['bizora-backup'] }]
     })
     if (selected.canceled || !selected.filePaths?.[0]) return { cancelled: true }
     const confirmation = await dialog.showMessageBox(win, {
@@ -253,7 +253,7 @@ function registerDatabaseHandlers() {
       buttons: ['Cancel', 'Restore backup'],
       defaultId: 0,
       cancelId: 0,
-      title: 'Replace current BIZORA data?',
+      title: 'Replace current TRADEXO data?',
       message: 'Restoring replaces the current local database with the selected backup. Export a fresh backup first if you need the current data.'
     })
     if (confirmation.response !== 1) return { cancelled: true }
@@ -271,7 +271,7 @@ function registerDatabaseHandlers() {
 
 app.whenReady().then(async () => {
   const databasePath = path.join(app.getPath('userData'), 'data', 'bizora.sqlite')
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable; BIZORA will not save business data without encryption.')
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable; TRADEXO will not save business data without encryption.')
   const encryption = {
     encrypt: data => safeStorage.encryptString(data.toString('base64')),
     decrypt: data => Buffer.from(safeStorage.decryptString(data), 'base64')
@@ -287,7 +287,7 @@ app.whenReady().then(async () => {
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 }).catch(error => {
-  console.error('BIZORA startup failed:', error)
+  console.error('TRADEXO startup failed:', error)
   app.quit()
 })
 
