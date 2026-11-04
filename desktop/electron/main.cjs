@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, safeStorage, dialog } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
+const { pathToFileURL } = require('node:url')
 const { openLocalDatabase } = require('./database.cjs')
 const isDev = !app.isPackaged
 let localDb
@@ -36,7 +37,7 @@ function handleAppIpc(channel, handler) {
 
     const trustedOrigin = isDev
       ? senderUrl.protocol === 'http:' && senderUrl.hostname === '127.0.0.1' && senderUrl.port === '5173'
-      : senderUrl.protocol === 'file:'
+      : senderUrl.protocol === 'file:' && senderUrl.href === pathToFileURL(path.join(__dirname, '../dist/index.html')).href
 
     if (!trustedOrigin) {
       throw new Error('Blocked IPC request from an untrusted application origin.')
