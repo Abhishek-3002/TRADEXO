@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const crypto = require('node:crypto')
-const { hashPin, verifyPin, isValidPin } = require('./security.cjs')
+const { hashPin, verifyPin, isValidPin, createRecoveryCode, hashRecoveryCode, verifyRecoveryCode } = require('./security.cjs')
 const { openLocalDatabase } = require('./database.cjs')
 const isDev = !app.isPackaged
 let localDb
@@ -110,11 +110,14 @@ function registerSecurityHandlers() {
     if (!isValidPin(pin)) throw new Error('PIN must contain 6 to 12 digits.')
     const salt = crypto.randomBytes(16).toString('hex')
     const hash = (await hashPin(pin, salt)).toString('hex')
-    savePinMetadata({ version: 1, salt, hash, failedPinAttempts: 0, blockedUntil: 0 })
+    const recoveryCode = createRecoveryCode()
+    const recoverySalt = crypto.randomBytes(16).toString('hex')
+    const recoveryHash = hashRecoveryCode(recoveryCode, recoverySalt)
+    savePinMetadata({ version: 1, salt, hash, recoverySalt, recoveryHash, failedPinAttempts: 0, blockedUntil: 0 })
     unlocked = true
     failedPinAttempts = 0
     resetIdleLock()
-    return { configured: true, unlocked: true }
+    return { configured: true, unlocked: true, recoveryCode }
   }, { requiresUnlock: false })
   handleAppIpc('security:unlock', async (_event, pin) => {
     if (!pinMetadata) throw new Error('Set up your BIZORA PIN first.')
@@ -133,6 +136,28 @@ function registerSecurityHandlers() {
     unlocked = true
     resetIdleLock()
     return { configured: true, unlocked: true }
+  }, { requiresUnlock: false })
+  handleAppIpc('security:recover-pin', async (_event, recoveryCode, newPin) => {
+    if (!pinMetadata || !pinMetadata.recoverySalt || !pinMetadata.recoveryHash) throw new Error('No recovery code is configured for this installation.')
+    if (Date.now() < blockedUntil) throw new Error('Too many incorrect attempts. Please wait before trying again.')
+    if (!isValidPin(newPin)) throw new Error('New PIN must contain 6 to 12 digits.')
+    if (!verifyRecoveryCode(recoveryCode, pinMetadata.recoverySalt, pinMetadata.recoveryHash)) {
+      failedPinAttempts += 1
+      if (failedPinAttempts >= 5) blockedUntil = Date.now() + Math.min(3600000, 30000 * (2 ** (failedPinAttempts - 5)))
+      savePinMetadata({ ...pinMetadata, failedPinAttempts, blockedUntil })
+      throw new Error(failedPinAttempts >= 5 ? 'Incorrect recovery code. Too many attempts; try again later.' : 'Recovery code is incorrect.')
+    }
+    const salt = crypto.randomBytes(16).toString('hex')
+    const hash = (await hashPin(newPin, salt)).toString('hex')
+    const nextRecoveryCode = createRecoveryCode()
+    const recoverySalt = crypto.randomBytes(16).toString('hex')
+    const recoveryHash = hashRecoveryCode(nextRecoveryCode, recoverySalt)
+    savePinMetadata({ version: 1, salt, hash, recoverySalt, recoveryHash, failedPinAttempts: 0, blockedUntil: 0 })
+    failedPinAttempts = 0
+    blockedUntil = 0
+    unlocked = true
+    resetIdleLock()
+    return { configured: true, unlocked: true, recoveryCode: nextRecoveryCode }
   }, { requiresUnlock: false })
   handleAppIpc('security:change-pin', async (_event, currentPin, newPin) => {
     if (!pinMetadata || !unlocked) throw new Error('Unlock BIZORA before changing your PIN.')
