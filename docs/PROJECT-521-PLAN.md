@@ -1,4 +1,4 @@
-# BIZORA — Project 521 Master Plan
+# TRADEXO — Project 521 Master Plan
 
 ## Product direction
 Premium international business ERP by FIXBYTE INDIA. Website first; Windows desktop software is downloadable from the website. Mobile app and payment gateway are postponed.
