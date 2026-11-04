@@ -1,17 +1,15 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { safeStorage } = require('electron')
-
-function createSyncEngine(app) {
+function createSyncEngine(app, storage = require('electron').safeStorage) {
   const statePath = path.join(app.getPath('userData'), 'sync-state.enc')
 
   function readState() {
     if (!fs.existsSync(statePath)) return { queue: [], cursors: {} }
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!storage.isEncryptionAvailable()) {
       throw new Error('OS-backed encryption is unavailable; sync state was not opened.')
     }
     const encrypted = fs.readFileSync(statePath)
-    const state = JSON.parse(safeStorage.decryptString(encrypted))
+    const state = JSON.parse(storage.decryptString(encrypted))
     return {
       queue: Array.isArray(state.queue) ? state.queue : [],
       cursors: state.cursors && typeof state.cursors === 'object' ? state.cursors : {}
@@ -19,11 +17,11 @@ function createSyncEngine(app) {
   }
 
   function writeState(state) {
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!storage.isEncryptionAvailable()) {
       throw new Error('OS-backed encryption is unavailable; sync state was not saved.')
     }
     fs.mkdirSync(path.dirname(statePath), { recursive: true })
-    const encrypted = safeStorage.encryptString(JSON.stringify(state))
+    const encrypted = storage.encryptString(JSON.stringify(state))
     const tempPath = statePath + '.tmp'
     fs.writeFileSync(tempPath, encrypted, { mode: 0o600 })
     fs.renameSync(tempPath, statePath)
@@ -62,13 +60,30 @@ function createSyncEngine(app) {
     return payload
   }
 
+  function validateEvent(event) {
+    if (!event || typeof event !== 'object' || Array.isArray(event)) throw new Error('A sync event object is required.')
+    const required = ['event_id', 'entity_type', 'entity_id', 'operation', 'client_created_at']
+    for (const key of required) {
+      if (typeof event[key] !== 'string' || !event[key].trim()) throw new Error('Invalid sync event field: ' + key)
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(event.event_id)) throw new Error('event_id must be a UUID.')
+    if (!['create', 'update', 'reverse', 'archive'].includes(event.operation)) throw new Error('Unsupported sync event operation.')
+    if (event.entity_type.length > 80 || event.entity_id.length > 160) throw new Error('Sync event identity exceeds supported limits.')
+    if (!event.payload || typeof event.payload !== 'object' || Array.isArray(event.payload)) throw new Error('Sync event payload must be an object.')
+    if (!Number.isInteger(event.schema_version ?? 1) || (event.schema_version ?? 1) < 1) throw new Error('Invalid sync event schema_version.')
+    if (!Number.isFinite(Date.parse(event.client_created_at))) throw new Error('Invalid sync event timestamp.')
+    const safeEvent = JSON.parse(JSON.stringify({ ...event, schema_version: event.schema_version ?? 1 }))
+    if (Buffer.byteLength(JSON.stringify(safeEvent), 'utf8') > 262144) throw new Error('Sync event exceeds the 256 KB limit.')
+    return safeEvent
+  }
+
   return {
     enqueue(event) {
-      if (!event || typeof event !== 'object' || Array.isArray(event)) throw new Error('A sync event object is required.')
+      const safeEvent = validateEvent(event)
       const state = readState()
-      if (!state.queue.some(item => item.event_id === event.event_id)) {
+      if (!state.queue.some(item => item.event_id === safeEvent.event_id)) {
         if (state.queue.length >= 10000) throw new Error('Offline queue is full; sync before adding more changes.')
-        state.queue.push(event)
+        state.queue.push(safeEvent)
         writeState(state)
       }
       return { pending: state.queue.length }
