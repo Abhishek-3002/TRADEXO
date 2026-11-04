@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('bizora', Object.freeze({
     setupPin: pin => ipcRenderer.invoke('security:setup-pin', pin),
     unlock: pin => ipcRenderer.invoke('security:unlock', pin),
     changePin: (currentPin, newPin) => ipcRenderer.invoke('security:change-pin', currentPin, newPin),
+    recoverPin: (recoveryCode, newPin) => ipcRenderer.invoke('security:recover-pin', recoveryCode, newPin),
     lock: () => ipcRenderer.invoke('security:lock'),
     activity: () => ipcRenderer.invoke('security:activity'),
     onLocked: callback => {
