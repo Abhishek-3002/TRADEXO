@@ -19,4 +19,24 @@ async function verifyPin(pin, salt, expectedHex) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected)
 }
 
-module.exports = { isValidPin, hashPin, verifyPin }
+
+function createRecoveryCode() {
+  return crypto.randomBytes(32).toString('base64url')
+}
+
+function hashRecoveryCode(code, salt) {
+  if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(code)) throw new TypeError('Recovery code is invalid.')
+  if (typeof salt !== 'string' || !/^[a-f0-9]{32}$/.test(salt)) throw new TypeError('Recovery salt is invalid.')
+  return crypto.createHash('sha256').update(salt).update(':').update(code).digest('hex')
+}
+
+function verifyRecoveryCode(code, salt, expectedHex) {
+  if (typeof expectedHex !== 'string' || !/^[a-f0-9]{64}$/.test(expectedHex)) return false
+  let actual
+  try { actual = Buffer.from(hashRecoveryCode(code, salt), 'hex') } catch { return false }
+  const expected = Buffer.from(expectedHex, 'hex')
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected)
+}
+
+module.exports = { isValidPin, hashPin, verifyPin, createRecoveryCode, hashRecoveryCode, verifyRecoveryCode }
+
