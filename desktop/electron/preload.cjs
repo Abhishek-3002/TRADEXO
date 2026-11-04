@@ -8,7 +8,12 @@ contextBridge.exposeInMainWorld('bizora', Object.freeze({
     unlock: pin => ipcRenderer.invoke('security:unlock', pin),
     changePin: (currentPin, newPin) => ipcRenderer.invoke('security:change-pin', currentPin, newPin),
     lock: () => ipcRenderer.invoke('security:lock'),
-    activity: () => ipcRenderer.invoke('security:activity')
+    activity: () => ipcRenderer.invoke('security:activity'),
+    onLocked: callback => {
+      const listener = () => callback()
+      ipcRenderer.on('security:locked', listener)
+      return () => ipcRenderer.removeListener('security:locked', listener)
+    }
   }),
   database: Object.freeze({
     getSummary: () => ipcRenderer.invoke('db:summary'),
