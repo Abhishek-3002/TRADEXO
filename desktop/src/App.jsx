@@ -293,7 +293,7 @@ function SecurityGate({ api, onUnlocked }) {
 export default function App(){
  const securityApi=typeof window!=='undefined'?window.bizora?.security:null
  const [security,setSecurity]=useState({unlocked:!securityApi})
- useEffect(()=>{if(!securityApi)return;const sync=()=>securityApi.getStatus().then(setSecurity).catch(()=>setSecurity({unlocked:false}));sync();window.addEventListener('focus',sync);let lastActivity=0;const activity=()=>{const now=Date.now();if(now-lastActivity>20000){lastActivity=now;securityApi.activity().catch(()=>{})}};window.addEventListener('pointerdown',activity);window.addEventListener('keydown',activity);return()=>{window.removeEventListener('focus',sync);window.removeEventListener('pointerdown',activity);window.removeEventListener('keydown',activity)}},[])
+ useEffect(()=>{if(!securityApi)return;const sync=()=>securityApi.getStatus().then(setSecurity).catch(()=>setSecurity({unlocked:false}));sync();window.addEventListener('focus',sync);const unsubscribe=securityApi.onLocked?.(()=>setSecurity({configured:true,unlocked:false}));let lastActivity=0;const activity=()=>{const now=Date.now();if(now-lastActivity>20000){lastActivity=now;securityApi.activity().catch(()=>{})}};window.addEventListener('pointerdown',activity);window.addEventListener('keydown',activity);return()=>{unsubscribe?.();window.removeEventListener('focus',sync);window.removeEventListener('pointerdown',activity);window.removeEventListener('keydown',activity)}},[])
  const [active,setActive]=useState('Overview'),[dark,setDark]=useState(false),[palette,setPalette]=useState(false),[query,setQuery]=useState('')
  async function changePinNow(){
   if(!securityApi)return
