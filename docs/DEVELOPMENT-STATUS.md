@@ -1,4 +1,4 @@
-# BIZORA Project 521 — Development Status
+# TRADEXO Project 521 — Development Status
 
 Updated: 2026-11-04
 
@@ -6,7 +6,7 @@ Latest validation: GitHub Actions run 41707453670 passed on commit `ae3d55926f68
 
 ## Verified baseline
 - Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
-- Multi-company, company-wise financial year and GST settings are implemented on `rename-to-bizora` in open PR #2; the PR remains unmerged.
+- Multi-company, company-wise financial year and GST settings are implemented on `tradexo-brand-restoration` in open PR #2; the PR remains unmerged.
 - This repository is a development foundation, not a production-ready ERP.
 
 ## Expenses and indirect income
