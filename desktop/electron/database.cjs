@@ -311,7 +311,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
   if (filePath && fs.existsSync(filePath)) {
     const stored = fs.readFileSync(filePath)
     if (stored.subarray(0, encryptedPrefix.length).equals(encryptedPrefix)) {
-      if (!encryption || typeof encryption.decrypt !== 'function') throw new Error('BIZORA database encryption is unavailable; refusing to open encrypted data.')
+      if (!encryption || typeof encryption.decrypt !== 'function') throw new Error('TRADEXO database encryption is unavailable; refusing to open encrypted data.')
       db = new SQL.Database(new Uint8Array(encryption.decrypt(stored.subarray(encryptedPrefix.length))))
     } else {
       // One-time compatibility import for the earlier plaintext development database.
@@ -443,7 +443,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
 
   function persist() {
     if (!filePath) return
-    if (!encryption || typeof encryption.encrypt !== 'function') throw new Error('BIZORA database encryption is required before saving local data.')
+    if (!encryption || typeof encryption.encrypt !== 'function') throw new Error('TRADEXO database encryption is required before saving local data.')
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
     const temporaryPath = filePath + '.tmp'
     const encrypted = Buffer.concat([encryptedPrefix, Buffer.from(encryption.encrypt(Buffer.from(db.export())))])
@@ -461,7 +461,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
     if (!Buffer.isBuffer(snapshot) || snapshot.length < encryptedPrefix.length + 32 || snapshot.length > 500 * 1024 * 1024) {
       throw new Error('Backup file is invalid or exceeds the 500 MB limit.')
     }
-    if (!snapshot.subarray(0, encryptedPrefix.length).equals(encryptedPrefix)) throw new Error('This is not a supported BIZORA encrypted backup.')
+    if (!snapshot.subarray(0, encryptedPrefix.length).equals(encryptedPrefix)) throw new Error('This is not a supported TRADEXO encrypted backup.')
     if (!encryption || typeof encryption.decrypt !== 'function') throw new Error('Database decryption is unavailable.')
     let candidate
     try {
@@ -470,7 +470,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       const integrity = rows(candidate, 'PRAGMA integrity_check')[0]?.integrity_check
       if (integrity !== 'ok') throw new Error('Backup database integrity check failed.')
       const version = Number(rows(candidate, "SELECT value FROM app_meta WHERE key='schema_version'")[0]?.value || 0)
-      if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(version)) throw new Error('Backup version is not supported by this BIZORA build.')
+      if (![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(version)) throw new Error('Backup version is not supported by this TRADEXO build.')
       if (version === 3) {
         candidate.exec(`CREATE TABLE IF NOT EXISTS financial_years (id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), label TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('active','inactive','closed')), created_at TEXT NOT NULL, UNIQUE(company_id,label), CHECK(start_date<=end_date)); CREATE INDEX IF NOT EXISTS financial_years_company_idx ON financial_years(company_id,start_date); CREATE UNIQUE INDEX IF NOT EXISTS financial_years_one_active_per_company ON financial_years(company_id) WHERE status='active'; CREATE TABLE IF NOT EXISTS company_tax_settings (company_id TEXT PRIMARY KEY REFERENCES companies(id), gst_enabled INTEGER NOT NULL DEFAULT 0 CHECK(gst_enabled IN (0,1)), default_tax_mode TEXT NOT NULL DEFAULT 'none' CHECK(default_tax_mode IN ('none','exclusive','inclusive')), place_of_supply_state_code TEXT, default_gstin_id TEXT REFERENCES company_gstins(id), updated_at TEXT NOT NULL); UPDATE app_meta SET value='4' WHERE key='schema_version';`)
       }
@@ -577,7 +577,7 @@ async function openLocalDatabase(filePath = null, encryption = null) {
       }
       const requiredTables = ['companies','customers','products','company_gstins','financial_years','company_tax_settings','vendors','sales_invoices','sales_invoice_items','purchase_bills','purchase_bill_items','purchase_payments','financial_entries','stock_movements','sales_receipts','audit_events']
       const actualTables = rows(candidate, "SELECT name FROM sqlite_master WHERE type='table'").map(item => item.name)
-      if (!requiredTables.every(name => actualTables.includes(name))) throw new Error('Backup is missing required BIZORA data tables.')
+      if (!requiredTables.every(name => actualTables.includes(name))) throw new Error('Backup is missing required TRADEXO data tables.')
       const previous = db
       const previousActiveCompanyId = activeCompanyId
       db = candidate
