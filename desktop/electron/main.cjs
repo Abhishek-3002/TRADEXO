@@ -17,6 +17,7 @@ const IDLE_LOCK_MS = 5 * 60 * 1000
 const PIN_FILE = () => path.join(app.getPath('userData'), 'security.dat')
 
 function savePinMetadata(metadata) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable. BIZORA cannot safely save PIN settings on this device.')
   const encrypted = safeStorage.encryptString(JSON.stringify(metadata))
   const temporary = PIN_FILE() + '.tmp'
   fs.writeFileSync(temporary, encrypted, { flag: 'w', mode: 0o600 })
@@ -26,6 +27,7 @@ function savePinMetadata(metadata) {
 
 function loadPinMetadata() {
   if (!fs.existsSync(PIN_FILE())) return null
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable. BIZORA cannot safely read PIN settings on this device.')
   const parsed = JSON.parse(safeStorage.decryptString(fs.readFileSync(PIN_FILE())))
   if (!parsed || parsed.version !== 1 || typeof parsed.salt !== 'string' || typeof parsed.hash !== 'string') throw new Error('BIZORA security settings are damaged. Contact support.')
   return parsed
@@ -132,7 +134,29 @@ function registerSecurityHandlers() {
     resetIdleLock()
     return { configured: true, unlocked: true }
   }, { requiresUnlock: false })
+  handleAppIpc('security:change-pin', async (_event, currentPin, newPin) => {
+    if (!pinMetadata || !unlocked) throw new Error('Unlock BIZORA before changing your PIN.')
+    if (typeof currentPin !== 'string' || !/^\\d{6,12}$/.test(currentPin)) throw new Error('Enter your current 6–12 digit PIN.')
+    if (typeof newPin !== 'string' || !/^\\d{6,12}$/.test(newPin)) throw new Error('New PIN must contain 6 to 12 digits.')
+    const currentHash = await hashPin(currentPin, pinMetadata.salt)
+    const expectedHash = Buffer.from(pinMetadata.hash, 'hex')
+    if (currentHash.length !== expectedHash.length || !crypto.timingSafeEqual(currentHash, expectedHash)) {
+      failedPinAttempts += 1
+      if (failedPinAttempts >= 5) blockedUntil = Date.now() + Math.min(3600000, 30000 * (2 ** (failedPinAttempts - 5)))
+      savePinMetadata({ ...pinMetadata, failedPinAttempts, blockedUntil })
+      if (failedPinAttempts >= 5) lockApplication()
+      throw new Error('Current PIN is incorrect.')
+    }
+    const salt = crypto.randomBytes(16).toString('hex')
+    const hash = (await hashPin(newPin, salt)).toString('hex')
+    savePinMetadata({ version: 1, salt, hash, failedPinAttempts: 0, blockedUntil: 0 })
+    failedPinAttempts = 0
+    blockedUntil = 0
+    resetIdleLock()
+    return { changed: true }
+  })
   handleAppIpc('security:lock', () => { lockApplication(); return { unlocked: false } }, { requiresUnlock: false })
+
   handleAppIpc('security:activity', () => { resetIdleLock(); return { ok: true } }, { requiresUnlock: false })
 }
 
