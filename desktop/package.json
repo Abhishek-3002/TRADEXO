@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "vite build",
-    "build:win": "npm run build && electron-builder --win nsis"
+    "build:win": "npm run build && electron-builder --win nsis",
+    "test": "node --test electron/*.test.cjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
