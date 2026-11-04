@@ -20,49 +20,75 @@ function createWindow() {
   else win.loadFile(path.join(__dirname, '../dist/index.html'))
 }
 
+function handleAppIpc(channel, handler) {
+  handleAppIpc(channel, (event, ...args) => {
+    const frame = event.senderFrame
+    if (!frame || frame !== event.sender.mainFrame) {
+      throw new Error('Blocked IPC request from an untrusted frame.')
+    }
+
+    let senderUrl
+    try {
+      senderUrl = new URL(frame.url)
+    } catch {
+      throw new Error('Blocked IPC request from an invalid application origin.')
+    }
+
+    const trustedOrigin = isDev
+      ? senderUrl.protocol === 'http:' && senderUrl.hostname === '127.0.0.1' && senderUrl.port === '5173'
+      : senderUrl.protocol === 'file:'
+
+    if (!trustedOrigin) {
+      throw new Error('Blocked IPC request from an untrusted application origin.')
+    }
+
+    return handler(event, ...args)
+  })
+}
+
 function registerDatabaseHandlers() {
-  ipcMain.handle('db:summary', () => localDb.getSummary())
-  ipcMain.handle('db:company:current', () => localDb.getCurrentCompany())
-  ipcMain.handle('db:companies:list', () => localDb.listCompanies())
-  ipcMain.handle('db:companies:create', (_event, input) => localDb.createCompany(input))
-  ipcMain.handle('db:company:profile:update', (_event, input) => localDb.updateCompanyProfile(input))
-  ipcMain.handle('db:company:set-active', (_event, id) => localDb.setActiveCompany(id))
-  ipcMain.handle('db:company:gstins:list', (_event, id) => localDb.listCompanyGstins(id))
-  ipcMain.handle('db:company:gstins:add', (_event, input) => localDb.addCompanyGstin(input))
-  ipcMain.handle('db:financial-years:list', () => localDb.listFinancialYears())
-  ipcMain.handle('db:financial-years:create', (_event, input) => localDb.createFinancialYear(input))
-  ipcMain.handle('db:financial-years:set-active', (_event, id) => localDb.setActiveFinancialYear(id))
-  ipcMain.handle('db:company:tax-settings:get', () => localDb.getCompanyTaxSettings())
-  ipcMain.handle('db:company:tax-settings:save', (_event, input) => localDb.saveCompanyTaxSettings(input))
-  ipcMain.handle('db:customers:list', (_event, limit) => localDb.listCustomers(limit))
-  ipcMain.handle('db:customers:create', (_event, input) => localDb.createCustomer(input))
-  ipcMain.handle('db:products:list', (_event, limit) => localDb.listProducts(limit))
-  ipcMain.handle('db:products:create', (_event, input) => localDb.createProduct(input))
-  ipcMain.handle('db:vendors:list', (_event, limit) => localDb.listVendors(limit))
-  ipcMain.handle('db:vendors:create', (_event, input) => localDb.createVendor(input))
-  ipcMain.handle('db:invoices:list', (_event, limit) => localDb.listSalesInvoices(limit))
-  ipcMain.handle('db:receipts:list', (_event, invoiceId, limit) => localDb.listSalesReceipts(invoiceId, limit))
-  ipcMain.handle('db:receipts:create', (_event, input) => localDb.recordSalesReceipt(input))
-  ipcMain.handle('db:invoices:create-draft', (_event, input) => localDb.createSalesInvoiceDraft(input))
-  ipcMain.handle('db:invoices:get', (_event, id) => localDb.getSalesInvoice(id))
-  ipcMain.handle('db:invoices:post', (_event, id) => localDb.postSalesInvoice(id))
-  ipcMain.handle('db:invoices:reverse', (_event, id, reason) => localDb.reverseSalesInvoice(id, reason))
-  ipcMain.handle('db:purchases:list', (_event, limit) => localDb.listPurchaseBills(limit))
-  ipcMain.handle('db:purchases:payments:list', (_event, billId, limit) => localDb.listPurchasePayments(billId, limit))
-  ipcMain.handle('db:reports:payables-aging', (_event, asOfDate) => localDb.getPayablesAging(asOfDate))
-  ipcMain.handle('db:financial-entries:list', (_event, entryType, limit) => localDb.listFinancialEntries(entryType, limit))
-  ipcMain.handle('db:financial-entries:summary', () => localDb.getFinancialEntrySummary())
-  ipcMain.handle('db:financial-entries:create', (_event, input) => localDb.createFinancialEntry(input))
-  ipcMain.handle('db:purchases:payments:create', (_event, input) => localDb.recordPurchasePayment(input))
-  ipcMain.handle('db:purchases:create-draft', (_event, input) => localDb.createPurchaseBillDraft(input))
-  ipcMain.handle('db:purchases:get', (_event, id) => localDb.getPurchaseBill(id))
-  ipcMain.handle('db:purchases:post', (_event, id) => localDb.postPurchaseBill(id))
-  ipcMain.handle('db:purchases:reverse', (_event, id, reason) => localDb.reversePurchaseBill(id, reason))
-  ipcMain.handle('db:stock:movements', (_event, productId, limit) => localDb.listStockMovements(productId, limit))
-  ipcMain.handle('db:stock:product', (_event, productId) => localDb.getProductStock(productId))
-  ipcMain.handle('db:stock:adjust', (_event, input) => localDb.createStockAdjustment(input))
-  ipcMain.handle('db:stock:low', (_event, limit) => localDb.listLowStockProducts(limit))
-  ipcMain.handle('db:backup:create', async () => {
+  handleAppIpc('db:summary', () => localDb.getSummary())
+  handleAppIpc('db:company:current', () => localDb.getCurrentCompany())
+  handleAppIpc('db:companies:list', () => localDb.listCompanies())
+  handleAppIpc('db:companies:create', (_event, input) => localDb.createCompany(input))
+  handleAppIpc('db:company:profile:update', (_event, input) => localDb.updateCompanyProfile(input))
+  handleAppIpc('db:company:set-active', (_event, id) => localDb.setActiveCompany(id))
+  handleAppIpc('db:company:gstins:list', (_event, id) => localDb.listCompanyGstins(id))
+  handleAppIpc('db:company:gstins:add', (_event, input) => localDb.addCompanyGstin(input))
+  handleAppIpc('db:financial-years:list', () => localDb.listFinancialYears())
+  handleAppIpc('db:financial-years:create', (_event, input) => localDb.createFinancialYear(input))
+  handleAppIpc('db:financial-years:set-active', (_event, id) => localDb.setActiveFinancialYear(id))
+  handleAppIpc('db:company:tax-settings:get', () => localDb.getCompanyTaxSettings())
+  handleAppIpc('db:company:tax-settings:save', (_event, input) => localDb.saveCompanyTaxSettings(input))
+  handleAppIpc('db:customers:list', (_event, limit) => localDb.listCustomers(limit))
+  handleAppIpc('db:customers:create', (_event, input) => localDb.createCustomer(input))
+  handleAppIpc('db:products:list', (_event, limit) => localDb.listProducts(limit))
+  handleAppIpc('db:products:create', (_event, input) => localDb.createProduct(input))
+  handleAppIpc('db:vendors:list', (_event, limit) => localDb.listVendors(limit))
+  handleAppIpc('db:vendors:create', (_event, input) => localDb.createVendor(input))
+  handleAppIpc('db:invoices:list', (_event, limit) => localDb.listSalesInvoices(limit))
+  handleAppIpc('db:receipts:list', (_event, invoiceId, limit) => localDb.listSalesReceipts(invoiceId, limit))
+  handleAppIpc('db:receipts:create', (_event, input) => localDb.recordSalesReceipt(input))
+  handleAppIpc('db:invoices:create-draft', (_event, input) => localDb.createSalesInvoiceDraft(input))
+  handleAppIpc('db:invoices:get', (_event, id) => localDb.getSalesInvoice(id))
+  handleAppIpc('db:invoices:post', (_event, id) => localDb.postSalesInvoice(id))
+  handleAppIpc('db:invoices:reverse', (_event, id, reason) => localDb.reverseSalesInvoice(id, reason))
+  handleAppIpc('db:purchases:list', (_event, limit) => localDb.listPurchaseBills(limit))
+  handleAppIpc('db:purchases:payments:list', (_event, billId, limit) => localDb.listPurchasePayments(billId, limit))
+  handleAppIpc('db:reports:payables-aging', (_event, asOfDate) => localDb.getPayablesAging(asOfDate))
+  handleAppIpc('db:financial-entries:list', (_event, entryType, limit) => localDb.listFinancialEntries(entryType, limit))
+  handleAppIpc('db:financial-entries:summary', () => localDb.getFinancialEntrySummary())
+  handleAppIpc('db:financial-entries:create', (_event, input) => localDb.createFinancialEntry(input))
+  handleAppIpc('db:purchases:payments:create', (_event, input) => localDb.recordPurchasePayment(input))
+  handleAppIpc('db:purchases:create-draft', (_event, input) => localDb.createPurchaseBillDraft(input))
+  handleAppIpc('db:purchases:get', (_event, id) => localDb.getPurchaseBill(id))
+  handleAppIpc('db:purchases:post', (_event, id) => localDb.postPurchaseBill(id))
+  handleAppIpc('db:purchases:reverse', (_event, id, reason) => localDb.reversePurchaseBill(id, reason))
+  handleAppIpc('db:stock:movements', (_event, productId, limit) => localDb.listStockMovements(productId, limit))
+  handleAppIpc('db:stock:product', (_event, productId) => localDb.getProductStock(productId))
+  handleAppIpc('db:stock:adjust', (_event, input) => localDb.createStockAdjustment(input))
+  handleAppIpc('db:stock:low', (_event, limit) => localDb.listLowStockProducts(limit))
+  handleAppIpc('db:backup:create', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showSaveDialog(win, {
       title: 'Save encrypted BIZORA backup',
@@ -76,7 +102,7 @@ function registerDatabaseHandlers() {
     fs.renameSync(temporary, result.filePath)
     return { cancelled: false, filePath: result.filePath }
   })
-  ipcMain.handle('db:backup:restore', async () => {
+  handleAppIpc('db:backup:restore', async () => {
     const win = BrowserWindow.getFocusedWindow()
     const selected = await dialog.showOpenDialog(win, {
       title: 'Choose a BIZORA encrypted backup',
@@ -107,7 +133,7 @@ app.whenReady().then(async () => {
     decrypt: data => Buffer.from(safeStorage.decryptString(data), 'base64')
   }
   localDb = await openLocalDatabase(databasePath, encryption)
-  ipcMain.handle('app:get-version', () => app.getVersion())
+  handleAppIpc('app:get-version', () => app.getVersion())
   registerDatabaseHandlers()
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
