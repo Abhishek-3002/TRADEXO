@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('bizora', Object.freeze({
+contextBridge.exposeInMainWorld('tradexo', Object.freeze({
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   security: Object.freeze({
     getStatus: () => ipcRenderer.invoke('security:get-status'),
