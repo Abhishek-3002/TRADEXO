@@ -2,6 +2,13 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('bizora', Object.freeze({
   getVersion: () => ipcRenderer.invoke('app:get-version'),
+  security: Object.freeze({
+    getStatus: () => ipcRenderer.invoke('security:get-status'),
+    setupPin: pin => ipcRenderer.invoke('security:setup-pin', pin),
+    unlock: pin => ipcRenderer.invoke('security:unlock', pin),
+    lock: () => ipcRenderer.invoke('security:lock'),
+    activity: () => ipcRenderer.invoke('security:activity')
+  }),
   database: Object.freeze({
     getSummary: () => ipcRenderer.invoke('db:summary'),
     getCurrentCompany: () => ipcRenderer.invoke('db:company:current'),
