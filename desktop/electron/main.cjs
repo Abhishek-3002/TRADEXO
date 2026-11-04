@@ -228,7 +228,7 @@ app.whenReady().then(async () => {
   }
   localDb = await openLocalDatabase(databasePath, encryption)
   pinMetadata = loadPinMetadata()
-  unlocked = !pinMetadata
+  unlocked = false
   handleAppIpc('app:get-version', () => app.getVersion(), { requiresUnlock: false })
   registerSecurityHandlers()
   registerDatabaseHandlers()
