@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('bizora', Object.freeze({
     getStatus: () => ipcRenderer.invoke('security:get-status'),
     setupPin: pin => ipcRenderer.invoke('security:setup-pin', pin),
     unlock: pin => ipcRenderer.invoke('security:unlock', pin),
+    changePin: (currentPin, newPin) => ipcRenderer.invoke('security:change-pin', currentPin, newPin),
     lock: () => ipcRenderer.invoke('security:lock'),
     activity: () => ipcRenderer.invoke('security:activity')
   }),
