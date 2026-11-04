@@ -38,9 +38,15 @@ async function hashPin(pin, salt) {
 }
 
 function lockApplication() {
+  const wasUnlocked = unlocked
   unlocked = false
   if (idleLockTimer) clearTimeout(idleLockTimer)
   idleLockTimer = null
+  if (wasUnlocked) {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('security:locked')
+    }
+  }
 }
 
 function resetIdleLock() {
