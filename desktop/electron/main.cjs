@@ -107,7 +107,7 @@ function registerSecurityHandlers() {
     if (typeof pin !== 'string' || !/^\d{6,12}$/.test(pin)) throw new Error('PIN must contain 6 to 12 digits.')
     const salt = crypto.randomBytes(16).toString('hex')
     const hash = (await hashPin(pin, salt)).toString('hex')
-    savePinMetadata({ version: 1, salt, hash })
+    savePinMetadata({ version: 1, salt, hash, failedPinAttempts: 0, blockedUntil: 0 })
     unlocked = true
     failedPinAttempts = 0
     resetIdleLock()
@@ -121,11 +121,13 @@ function registerSecurityHandlers() {
     const expected = Buffer.from(pinMetadata.hash, 'hex')
     if (candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) {
       failedPinAttempts += 1
-      if (failedPinAttempts >= 5) blockedUntil = Date.now() + Math.min(300000, 30000 * (failedPinAttempts - 4))
+      if (failedPinAttempts >= 5) blockedUntil = Date.now() + Math.min(3600000, 30000 * (2 ** (failedPinAttempts - 5)))
+      savePinMetadata({ ...pinMetadata, failedPinAttempts, blockedUntil })
       throw new Error(failedPinAttempts >= 5 ? 'Incorrect PIN. Too many attempts; try again later.' : 'Incorrect PIN.')
     }
     failedPinAttempts = 0
     blockedUntil = 0
+    savePinMetadata({ ...pinMetadata, failedPinAttempts: 0, blockedUntil: 0 })
     unlocked = true
     resetIdleLock()
     return { configured: true, unlocked: true }
@@ -228,6 +230,8 @@ app.whenReady().then(async () => {
   }
   localDb = await openLocalDatabase(databasePath, encryption)
   pinMetadata = loadPinMetadata()
+  failedPinAttempts = Number.isInteger(pinMetadata?.failedPinAttempts) ? pinMetadata.failedPinAttempts : 0
+  blockedUntil = Number.isFinite(pinMetadata?.blockedUntil) ? pinMetadata.blockedUntil : 0
   unlocked = false
   handleAppIpc('app:get-version', () => app.getVersion(), { requiresUnlock: false })
   registerSecurityHandlers()
