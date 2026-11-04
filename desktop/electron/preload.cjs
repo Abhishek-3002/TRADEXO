@@ -1,4 +1,64 @@
 const { contextBridge, ipcRenderer } = require('electron')
+
 contextBridge.exposeInMainWorld('tradexo', Object.freeze({
-  getVersion: () => ipcRenderer.invoke('app:get-version')
+  getVersion: () => ipcRenderer.invoke('app:get-version'),
+  security: Object.freeze({
+    getStatus: () => ipcRenderer.invoke('security:get-status'),
+    setupPin: pin => ipcRenderer.invoke('security:setup-pin', pin),
+    unlock: pin => ipcRenderer.invoke('security:unlock', pin),
+    changePin: (currentPin, newPin) => ipcRenderer.invoke('security:change-pin', currentPin, newPin),
+    recoverPin: (recoveryCode, newPin) => ipcRenderer.invoke('security:recover-pin', recoveryCode, newPin),
+    lock: () => ipcRenderer.invoke('security:lock'),
+    activity: () => ipcRenderer.invoke('security:activity'),
+    onLocked: callback => {
+      const listener = () => callback()
+      ipcRenderer.on('security:locked', listener)
+      return () => ipcRenderer.removeListener('security:locked', listener)
+    }
+  }),
+  database: Object.freeze({
+    getSummary: () => ipcRenderer.invoke('db:summary'),
+    getCurrentCompany: () => ipcRenderer.invoke('db:company:current'),
+    listCompanies: () => ipcRenderer.invoke('db:companies:list'),
+    createCompany: input => ipcRenderer.invoke('db:companies:create', input),
+    updateCompanyProfile: input => ipcRenderer.invoke('db:company:profile:update', input),
+    setActiveCompany: id => ipcRenderer.invoke('db:company:set-active', id),
+    listCompanyGstins: id => ipcRenderer.invoke('db:company:gstins:list', id),
+    addCompanyGstin: input => ipcRenderer.invoke('db:company:gstins:add', input),
+    listFinancialYears: () => ipcRenderer.invoke('db:financial-years:list'),
+    createFinancialYear: input => ipcRenderer.invoke('db:financial-years:create', input),
+    setActiveFinancialYear: id => ipcRenderer.invoke('db:financial-years:set-active', id),
+    getCompanyTaxSettings: () => ipcRenderer.invoke('db:company:tax-settings:get'),
+    saveCompanyTaxSettings: input => ipcRenderer.invoke('db:company:tax-settings:save', input),
+    listCustomers: limit => ipcRenderer.invoke('db:customers:list', limit),
+    createCustomer: input => ipcRenderer.invoke('db:customers:create', input),
+    listProducts: limit => ipcRenderer.invoke('db:products:list', limit),
+    createProduct: input => ipcRenderer.invoke('db:products:create', input),
+    listVendors: limit => ipcRenderer.invoke('db:vendors:list', limit),
+    createVendor: input => ipcRenderer.invoke('db:vendors:create', input),
+    listSalesInvoices: limit => ipcRenderer.invoke('db:invoices:list', limit),
+    listSalesReceipts: (invoiceId, limit) => ipcRenderer.invoke('db:receipts:list', invoiceId, limit),
+    recordSalesReceipt: input => ipcRenderer.invoke('db:receipts:create', input),
+    createSalesInvoiceDraft: input => ipcRenderer.invoke('db:invoices:create-draft', input),
+    getSalesInvoice: id => ipcRenderer.invoke('db:invoices:get', id),
+    postSalesInvoice: id => ipcRenderer.invoke('db:invoices:post', id),
+    reverseSalesInvoice: (id, reason) => ipcRenderer.invoke('db:invoices:reverse', id, reason),
+    listPurchaseBills: limit => ipcRenderer.invoke('db:purchases:list', limit),
+    listPurchasePayments: (billId, limit) => ipcRenderer.invoke('db:purchases:payments:list', billId, limit),
+    getPayablesAging: asOfDate => ipcRenderer.invoke('db:reports:payables-aging', asOfDate),
+    listFinancialEntries: (entryType, limit) => ipcRenderer.invoke('db:financial-entries:list', entryType, limit),
+    getFinancialEntrySummary: () => ipcRenderer.invoke('db:financial-entries:summary'),
+    createFinancialEntry: input => ipcRenderer.invoke('db:financial-entries:create', input),
+    recordPurchasePayment: input => ipcRenderer.invoke('db:purchases:payments:create', input),
+    createPurchaseBillDraft: input => ipcRenderer.invoke('db:purchases:create-draft', input),
+    getPurchaseBill: id => ipcRenderer.invoke('db:purchases:get', id),
+    postPurchaseBill: id => ipcRenderer.invoke('db:purchases:post', id),
+    reversePurchaseBill: (id, reason) => ipcRenderer.invoke('db:purchases:reverse', id, reason),
+    listStockMovements: (productId, limit) => ipcRenderer.invoke('db:stock:movements', productId, limit),
+    getProductStock: productId => ipcRenderer.invoke('db:stock:product', productId),
+    createStockAdjustment: input => ipcRenderer.invoke('db:stock:adjust', input),
+    listLowStockProducts: limit => ipcRenderer.invoke('db:stock:low', limit),
+    createBackup: () => ipcRenderer.invoke('db:backup:create'),
+    restoreBackup: () => ipcRenderer.invoke('db:backup:restore')
+  })
 }))
