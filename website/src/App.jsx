@@ -25,7 +25,7 @@ function WebsiteApp() {
   }
   return <div className={dark ? 'site dark' : 'site'}>
     <header className="nav wrap">
-      <a className="brand" href="#"><span className="brand-mark">T</span><span>TRADE<span className="violet">XO</span><small>BY FIXBYTE INDIA</small></span></a>
+      <a className="brand" href="#" aria-label="TRADEXO home"><img className="brand-logo" src="/tradexo-logo.svg" alt="TRADEXO" /></a>
       <button className="mobile-menu" onClick={()=>setMenu(!menu)} aria-label="Toggle menu">{menu?<X/>:<Menu/>}</button>
       <nav className={menu?'open':''}><a href="#features" onClick={()=>setMenu(false)}>Features</a><a href="#plans" onClick={()=>setMenu(false)}>Plans</a><a href="#about" onClick={()=>setMenu(false)}>About</a><a href="#contact" className="nav-cta" onClick={()=>setMenu(false)}>Talk to Specialist <ArrowUpRight size={16}/></a></nav>
       <button className="theme" onClick={()=>setDark(!dark)} aria-label="Toggle theme">{dark?<Sun size={18}/>:<Moon size={18}/>}</button>
@@ -58,7 +58,7 @@ function WebsiteApp() {
         <form className="contact-form" onSubmit={submit}><h3>Talk to a Specialist</h3><p>Submitting opens a WhatsApp draft. You must press Send in WhatsApp.</p><label>Your name<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Enter your name"/></label><label>Mobile number<input required inputMode="tel" pattern="[0-9+ ()-]{8,18}" value={form.mobile} onChange={e=>setForm({...form,mobile:e.target.value})} placeholder="Your contact number"/></label><label>Business type<input required value={form.business} onChange={e=>setForm({...form,business:e.target.value})} placeholder="Retail, distribution, services..."/></label><label>Interested plan<select value={form.plan} onChange={e=>setForm({...form,plan:e.target.value})}><option>Basic</option><option>Premium</option></select></label><label>Message (optional)<textarea rows="3" value={form.message} onChange={e=>setForm({...form,message:e.target.value})} placeholder="What would you like to manage?"/></label><button className="button primary full" type="submit">Continue on WhatsApp <ArrowUpRight size={16}/></button>{sent&&<small className="success">WhatsApp draft opened. Please review and press Send.</small>}</form>
       </div></section>
     </main>
-    <footer><div className="wrap footer-inner"><a className="brand" href="#"><span className="brand-mark">T</span><span>TRADE<span className="violet">XO</span><small>BY FIXBYTE INDIA</small></span></a><span>© {new Date().getFullYear()} TRADEXO. All rights reserved.</span><b>Developed & Maintained by FIXBYTE INDIA</b></div></footer>
+    <footer><div className="wrap footer-inner"><a className="brand" href="#" aria-label="TRADEXO home"><img className="brand-logo" src="/tradexo-logo.svg" alt="TRADEXO" /></a><span>© {new Date().getFullYear()} TRADEXO. All rights reserved.</span><b>Developed & Maintained by FIXBYTE INDIA</b></div></footer>
   </div>
 }
 export default function App() { return ['/admin','/admin/'].includes(window.location.pathname) ? <AdminPanel /> : <WebsiteApp /> }
