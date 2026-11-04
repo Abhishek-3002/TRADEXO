@@ -5,6 +5,7 @@
 - Supabase email/password sign-in
 - Frontend rejects accounts unless `app_metadata.role = owner_admin`
 - Customer, enquiry, payment, license and audit-log views (latest 100 records per section)
+- Owner Admin can manually add a customer and record an externally received payment (UPI, bank transfer, cash, cheque or other) against that customer; records remain pending until the owner verifies them
 - Database tables with RLS policies restricted to the trusted Owner Admin app_metadata claim
 - Payment verification RPC accepts only pending INR payments matching ₹1,499 / ₹4,999 / ₹9,999 annual plan prices; it atomically verifies payment, creates or renews the customer's license, updates the customer plan and writes an audit event
 - License suspend/reactivate RPC with Owner Admin authorization and audit logging
@@ -34,8 +35,9 @@ Never put a Supabase service-role key in Vite/Vercel public environment variable
 Do not share passwords in chat. The owner should set their own password through the secure Supabase invite/recovery flow.
 
 ## Current limitations
-- Customer profile editing, customer registration/self-service portal and automated payment gateway verification are not implemented.
+- No online payment gateway or checkout is used. Customers contact the specialist; the owner receives payment manually outside TRADEXO, records it in `/admin`, then verifies it to activate the license.
+- Customer self-service registration and customer profile editing are not implemented.
 - The website's enquiry form still opens a WhatsApp draft; it does not yet insert enquiries into the database.
 - Supabase Auth user provisioning and role assignment remain manual and must be performed by a trusted owner process.
-- The current admin workflow manually verifies the payment record entered by an authorised operator; it does not independently confirm UPI/bank settlement.
+- Manual payment recording is an administrative record only; it does not independently confirm UPI/bank settlement. Verify the money in your bank/UPI account before pressing Verify & Activate.
 - Desktop license-key validation, device binding enforcement, offline grace period and signed updater integration remain to be completed and tested before commercial release.
