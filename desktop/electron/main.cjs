@@ -2,9 +2,51 @@ const { app, BrowserWindow, ipcMain, safeStorage, dialog } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
+const crypto = require('node:crypto')
+const { promisify } = require('node:util')
+const scrypt = promisify(crypto.scrypt)
 const { openLocalDatabase } = require('./database.cjs')
 const isDev = !app.isPackaged
 let localDb
+let pinMetadata = null
+let unlocked = false
+let failedPinAttempts = 0
+let blockedUntil = 0
+let idleLockTimer = null
+const IDLE_LOCK_MS = 5 * 60 * 1000
+const PIN_FILE = () => path.join(app.getPath('userData'), 'security.dat')
+
+function savePinMetadata(metadata) {
+  const encrypted = safeStorage.encryptString(JSON.stringify(metadata))
+  const temporary = PIN_FILE() + '.tmp'
+  fs.writeFileSync(temporary, encrypted, { flag: 'w', mode: 0o600 })
+  fs.renameSync(temporary, PIN_FILE())
+  pinMetadata = metadata
+}
+
+function loadPinMetadata() {
+  if (!fs.existsSync(PIN_FILE())) return null
+  const parsed = JSON.parse(safeStorage.decryptString(fs.readFileSync(PIN_FILE())))
+  if (!parsed || parsed.version !== 1 || typeof parsed.salt !== 'string' || typeof parsed.hash !== 'string') throw new Error('BIZORA security settings are damaged. Contact support.')
+  return parsed
+}
+
+async function hashPin(pin, salt) {
+  return scrypt(pin, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 })
+}
+
+function lockApplication() {
+  unlocked = false
+  if (idleLockTimer) clearTimeout(idleLockTimer)
+  idleLockTimer = null
+}
+
+function resetIdleLock() {
+  if (!unlocked) return
+  if (idleLockTimer) clearTimeout(idleLockTimer)
+  idleLockTimer = setTimeout(lockApplication, IDLE_LOCK_MS)
+  idleLockTimer.unref?.()
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -25,11 +67,12 @@ function createWindow() {
     if (targetUrl !== trustedRendererUrl) event.preventDefault()
   })
   win.webContents.on('will-attach-webview', event => event.preventDefault())
+  win.on('minimize', () => lockApplication())
   if (isDev) win.loadURL('http://127.0.0.1:5173')
   else win.loadFile(path.join(__dirname, '../dist/index.html'))
 }
 
-function handleAppIpc(channel, handler) {
+function handleAppIpc(channel, handler, { requiresUnlock = true } = {}) {
   ipcMain.handle(channel, (event, ...args) => {
     const frame = event.senderFrame
     if (!frame || frame !== event.sender.mainFrame) {
@@ -51,8 +94,44 @@ function handleAppIpc(channel, handler) {
       throw new Error('Blocked IPC request from an untrusted application origin.')
     }
 
+    if (requiresUnlock && !unlocked) throw new Error('BIZORA is locked. Unlock with your PIN to continue.')
+    if (requiresUnlock) resetIdleLock()
     return handler(event, ...args)
   })
+}
+
+function registerSecurityHandlers() {
+  handleAppIpc('security:get-status', () => ({ configured: Boolean(pinMetadata), unlocked }), { requiresUnlock: false })
+  handleAppIpc('security:setup-pin', async (_event, pin) => {
+    if (pinMetadata) throw new Error('A PIN is already configured.')
+    if (typeof pin !== 'string' || !/^\d{6,12}$/.test(pin)) throw new Error('PIN must contain 6 to 12 digits.')
+    const salt = crypto.randomBytes(16).toString('hex')
+    const hash = (await hashPin(pin, salt)).toString('hex')
+    savePinMetadata({ version: 1, salt, hash })
+    unlocked = true
+    failedPinAttempts = 0
+    resetIdleLock()
+    return { configured: true, unlocked: true }
+  }, { requiresUnlock: false })
+  handleAppIpc('security:unlock', async (_event, pin) => {
+    if (!pinMetadata) throw new Error('Set up your BIZORA PIN first.')
+    if (Date.now() < blockedUntil) throw new Error('Too many incorrect attempts. Please wait before trying again.')
+    if (typeof pin !== 'string' || !/^\d{6,12}$/.test(pin)) throw new Error('Enter your 6 to 12 digit PIN.')
+    const candidate = await hashPin(pin, pinMetadata.salt)
+    const expected = Buffer.from(pinMetadata.hash, 'hex')
+    if (candidate.length !== expected.length || !crypto.timingSafeEqual(candidate, expected)) {
+      failedPinAttempts += 1
+      if (failedPinAttempts >= 5) blockedUntil = Date.now() + Math.min(300000, 30000 * (failedPinAttempts - 4))
+      throw new Error(failedPinAttempts >= 5 ? 'Incorrect PIN. Too many attempts; try again later.' : 'Incorrect PIN.')
+    }
+    failedPinAttempts = 0
+    blockedUntil = 0
+    unlocked = true
+    resetIdleLock()
+    return { configured: true, unlocked: true }
+  }, { requiresUnlock: false })
+  handleAppIpc('security:lock', () => { lockApplication(); return { unlocked: false } }, { requiresUnlock: false })
+  handleAppIpc('security:activity', () => { resetIdleLock(); return { ok: true } }, { requiresUnlock: false })
 }
 
 function registerDatabaseHandlers() {
@@ -148,7 +227,10 @@ app.whenReady().then(async () => {
     decrypt: data => Buffer.from(safeStorage.decryptString(data), 'base64')
   }
   localDb = await openLocalDatabase(databasePath, encryption)
-  handleAppIpc('app:get-version', () => app.getVersion())
+  pinMetadata = loadPinMetadata()
+  unlocked = !pinMetadata
+  handleAppIpc('app:get-version', () => app.getVersion(), { requiresUnlock: false })
+  registerSecurityHandlers()
   registerDatabaseHandlers()
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
