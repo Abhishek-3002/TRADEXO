@@ -17,6 +17,14 @@ function createWindow() {
       sandbox: true
     }
   })
+  const trustedRendererUrl = isDev
+    ? 'http://127.0.0.1:5173/'
+    : pathToFileURL(path.join(__dirname, '../dist/index.html')).href
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', (event, targetUrl) => {
+    if (targetUrl !== trustedRendererUrl) event.preventDefault()
+  })
+  win.webContents.on('will-attach-webview', event => event.preventDefault())
   if (isDev) win.loadURL('http://127.0.0.1:5173')
   else win.loadFile(path.join(__dirname, '../dist/index.html'))
 }
