@@ -61,3 +61,5 @@ Use a new UUID for every business change. Do not reuse an event UUID for a diffe
 
 ## Validation workflow
 The repository build workflow now runs pull-request checks when this development branch is the target. The integration pull request will be validated by the same website production build, desktop automated tests and desktop renderer build used by the main development branch.
+
+CI is also configured to run on `integration/**` pushes so the integration branch can be validated before review.
