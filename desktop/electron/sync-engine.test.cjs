@@ -115,3 +115,29 @@ test('queue refuses to access an existing encrypted queue when OS encryption is 
   assert.throws(() => engine.pendingCount(), /encryption is unavailable/)
   assert.throws(() => engine.enqueue({ ...event(), event_id: 'a3b7e8a1-5d4c-4b2a-9a1e-123456789abc' }), /encryption is unavailable/)
 })
+
+
+test('push acknowledgement preserves events enqueued while the network request is in flight', async t => {
+  const { engine, dir } = setup()
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  engine.enqueue(event())
+  const originalFetch = global.fetch
+  t.after(() => { global.fetch = originalFetch })
+  let finishRequest
+  global.fetch = () => new Promise(resolve => {
+    finishRequest = () => resolve({ ok: true, json: async () => [{ accepted_count: 1, duplicate_count: 0 }] })
+  })
+  const context = {
+    tenantId: 'tenant-1', deviceId: 'device-1',
+    supabaseUrl: 'https://example.supabase.co', anonKey: 'public-key', accessToken: 'test-token'
+  }
+  const pendingPush = engine.pushPending(context)
+  engine.enqueue({
+    ...event(),
+    event_id: 'a3b7e8a1-5d4c-4b2a-9a1e-123456789abc',
+    entity_id: 'invoice-local-2'
+  })
+  finishRequest()
+  assert.deepEqual(await pendingPush, { accepted: 1, duplicates: 0, pending: 1 })
+  assert.deepEqual(engine.pendingCount(), { pending: 1 })
+})
