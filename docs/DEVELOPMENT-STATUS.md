@@ -1,13 +1,19 @@
 # TRADEXO Project 521 — Development Status
 
-Updated: 2026-11-04
+Updated: 2026-11-05
 
-Latest validation: GitHub Actions run 41707453670 passed on commit `ae3d55926f68e6086ca74c362af4910bbc33e1cb` — website production build, desktop renderer build and all 42 database tests passed.
+Latest validation: GitHub Actions run 42081895680 passed after the pricing and sync foundations were merged into the development branch — website production build, full desktop test command and desktop renderer build all succeeded.
 
 ## Verified baseline
 - Website production build, desktop renderer build and offline database tests passed in GitHub Actions run 41693236857.
-- Multi-company, company-wise financial year and GST settings are implemented on the active feature branch in open PR #2; the PR remains unmerged.
+- Multi-company, company-wise financial year and GST settings are implemented on `rename-to-bizora`; PR #2 to `main` remains open and has merge conflicts. The default `main` branch has not been updated.
 - This repository is a development foundation, not a production-ready ERP.
+
+## Website plans and Owner Admin
+- The development website displays four annual tiers: Basic Free Trial, Starter ₹1,499/year, Business ₹4,999/year and Enterprise ₹9,999/year.
+- Website enquiries open a WhatsApp draft; there is no online payment gateway. The Owner Admin can record manual payments, verify pending INR payments at the configured plan amounts, and issue/renew a license with an audit entry.
+- The website labels planned features as not yet available. The plan list is not a promise that every feature is already released.
+- Owner Admin payment verification and license issuance are implemented in the development branch; desktop license-key validation, device binding enforcement, offline grace-period enforcement and signed updates remain incomplete.
 
 ## Expenses and indirect income
 - Company- and financial-year-scoped expense and indirect-income entries are recorded in an append-only ledger with category, date, party, amount, payment method and reference.
@@ -79,20 +85,20 @@ Latest validation: GitHub Actions run 41707453670 passed on commit `ae3d55926f68
 - GSTIN format validation is not government verification or tax advice. GST calculation requires the user to choose the applicable rate for each invoice line and correctly configure seller GSTIN and place-of-supply state; calculations are not a substitute for a tax professional's review.
 - Product SKU uniqueness is scoped to each company by a schema migration; the migration and cross-company SKU test pass in CI.
 - GST calculation is now integrated into sales invoice draft creation, but tax invoice PDF, e-invoice, e-way bill, GST portal filing, purchase-side GST accounting and full statutory validation are not complete.
-- Input GST credit accounting, reverse-charge handling, GST return reconciliation, supplier payable ageing/summary, purchase accounting, role permissions, sync conflict resolution, license enforcement and signed updater are not complete.
+- Input GST credit accounting, reverse-charge handling, GST return reconciliation, full purchase accounting, role permissions, sync conflict resolution, desktop license enforcement and signed updater are not complete. Supplier payables ageing is implemented using bill date because due-date fields are not yet available.
 - Invoice and purchase registers include reason-required reversal actions; reversal adds compensating stock entries rather than deleting the posted document.
 - SQL.js persists a complete database snapshot on each write; performance must be load-tested before larger deployments.
 - Windows installer and real Windows 10/11 installation have not yet been validated.
 
 ## Next milestones
-1. Add product/item HSN/SAC and product-level tax defaults; validate invoice tax treatment with a qualified GST professional.
-2. Add input GST credit accounting, supplier payable ageing/summary and purchase accounting integration.
+1. Complete end-to-end sync: enqueue every committed business write, transactionally apply pulled events, and test idempotency and conflicts.
+2. Implement tenant/device onboarding, authenticated session refresh, reconnect/retry scheduling and live Supabase migration verification.
 3. Add role permissions and enforce explicit company/GSTIN/financial-year selection before posting tax transactions.
-4. Test Windows encryption recovery, backup restore and crash recovery on Windows 10/11.
-5. Implement offline-first sync with idempotency, conflict handling and server-side authorization.
-6. Implement licensing, admin activation and signed automatic updates.
-7. Validate GST/e-invoice/e-way bill requirements with applicable official APIs and professional review.
-8. Build and test a signed Windows installer on Windows 10/11.
+4. Add input GST credit accounting, reverse-charge handling, GST return reconciliation and full purchase accounting.
+5. Validate GST/e-invoice/e-way bill requirements with applicable official APIs and qualified professional review.
+6. Complete desktop license-key validation, device binding, offline grace-period enforcement and signed automatic updates.
+7. Test Windows encryption recovery, backup restore, crash recovery and installation on Windows 10/11.
+8. Complete legal operator details, privacy/grievance contacts and Indian legal review before publishing final policy pages.
 
 ## Release gate
 Do not publish a customer download or call the product production-ready until Windows installation, migration, recovery, security, tax and sync tests pass.
@@ -101,6 +107,6 @@ Do not publish a customer download or call the product production-ready until Wi
 ## Offline sync foundation — integration status (2026-11-05)
 - Added an encrypted local outbox and per-tenant/device pull cursors using Electron safeStorage.
 - Added strict Electron IPC handlers through the existing trusted-frame, PIN-unlocked application guard; the renderer receives only the narrow `window.tradexo.sync` bridge.
-- Added authenticated, tenant-membership-checked Supabase push/pull RPC migration and unit tests for queue validation, duplicate UUIDs, acknowledgement safety, cursor persistence, page limits and encryption-unavailable behavior.
+- Added authenticated, tenant-membership-checked Supabase push/pull RPC migration and unit tests for queue validation, duplicate UUIDs, acknowledgement safety, concurrent enqueue preservation, cursor persistence, page limits and encryption-unavailable behavior.
 - Existing local database data is preserved when moving the legacy `bizora.sqlite` file to `tradexo.sqlite`; if both files exist, startup stops rather than silently selecting one. Legacy `.bizora-backup` files remain restorable alongside new `.tradexo-backup` files.
 - **Not yet complete:** business writes are not yet automatically recorded into the outbox; pulled events are not yet transactionally applied to the local database; tenant/device onboarding, session/token refresh, reconnect scheduling, conflict resolution and live Supabase migration verification remain release blockers. Do not use sync for live customer records yet.
