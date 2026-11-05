@@ -16,6 +16,13 @@ contextBridge.exposeInMainWorld('tradexo', Object.freeze({
       return () => ipcRenderer.removeListener('security:locked', listener)
     }
   }),
+  sync: Object.freeze({
+    enqueue: item => ipcRenderer.invoke('sync:enqueue', item),
+    pendingCount: () => ipcRenderer.invoke('sync:pending-count'),
+    pushPending: context => ipcRenderer.invoke('sync:push-pending', context),
+    pullEvents: (context, limit) => ipcRenderer.invoke('sync:pull-events', context, limit),
+    acknowledgePulled: (context, cursor) => ipcRenderer.invoke('sync:acknowledge-pulled', context, cursor)
+  }),
   database: Object.freeze({
     getSummary: () => ipcRenderer.invoke('db:summary'),
     getCurrentCompany: () => ipcRenderer.invoke('db:company:current'),
