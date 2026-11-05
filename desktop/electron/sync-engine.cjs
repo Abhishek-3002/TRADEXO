@@ -110,9 +110,12 @@ function createSyncEngine(app, storage = require('electron').safeStorage) {
         throw new Error('Server acknowledgement did not match the uploaded batch; local queue was preserved.')
       }
       const sentIds = new Set(batch.map(item => item.event_id))
-      state.queue = state.queue.filter(item => !sentIds.has(item.event_id))
-      writeState(state)
-      return { accepted, duplicates, pending: state.queue.length }
+      // Re-read after the network request so events enqueued while the request
+      // was in flight are not overwritten by this acknowledgement write.
+      const latestState = readState()
+      latestState.queue = latestState.queue.filter(item => !sentIds.has(item.event_id))
+      writeState(latestState)
+      return { accepted, duplicates, pending: latestState.queue.length }
     },
 
     async pullEvents(context, limit = 200) {
