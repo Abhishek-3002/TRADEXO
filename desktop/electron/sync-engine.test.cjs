@@ -99,16 +99,19 @@ test('pull uses the last acknowledged cursor and clamps page size', async t => {
   assert.equal(calls[1].p_after_event_id, 'f3b7e8a1-5d4c-4b2a-9a1e-123456789abc')
 })
 
-test('queue refuses to read or write when OS encryption is unavailable', t => {
+test('queue refuses to access an existing encrypted queue when OS encryption is unavailable', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tradexo-sync-no-crypto-'))
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   const app = { getPath: () => dir }
+  let available = true
   const storage = {
-    isEncryptionAvailable: () => false,
+    isEncryptionAvailable: () => available,
     encryptString: value => Buffer.from(value),
     decryptString: value => Buffer.from(value).toString('utf8')
   }
   const engine = createSyncEngine(app, storage)
-  assert.throws(() => engine.enqueue(event()), /encryption is unavailable/)
+  engine.enqueue(event())
+  available = false
   assert.throws(() => engine.pendingCount(), /encryption is unavailable/)
+  assert.throws(() => engine.enqueue({ ...event(), event_id: 'a3b7e8a1-5d4c-4b2a-9a1e-123456789abc' }), /encryption is unavailable/)
 })
