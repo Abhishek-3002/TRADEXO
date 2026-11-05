@@ -57,3 +57,7 @@ Use a new UUID for every business change. Do not reuse an event UUID for a diffe
 - No local business-record projection/apply handler, conflict-resolution UI, automatic reconnect scheduler, retry/backoff, token refresh wiring or multi-device integration tests are included yet.
 - `safeStorage` depends on the Windows user profile. Recovery requires a separate encrypted backup strategy; this queue is not a backup.
 - Do not use this foundation as the sole copy of production business data until end-to-end tests and restore drills pass.
+
+
+## Validation workflow
+The repository build workflow now runs pull-request checks when this development branch is the target. The integration pull request will be validated by the same website production build, desktop automated tests and desktop renderer build used by the main development branch.
