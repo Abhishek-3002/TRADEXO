@@ -5,8 +5,10 @@ const { pathToFileURL } = require('node:url')
 const crypto = require('node:crypto')
 const { hashPin, verifyPin, isValidPin, createRecoveryCode, hashRecoveryCode, verifyRecoveryCode } = require('./security.cjs')
 const { openLocalDatabase } = require('./database.cjs')
+const { createSyncEngine } = require('./sync-engine.cjs')
 const isDev = !app.isPackaged
 let localDb
+let syncEngine
 let pinMetadata = null
 let unlocked = false
 let failedPinAttempts = 0
@@ -184,6 +186,14 @@ function registerSecurityHandlers() {
   handleAppIpc('security:activity', () => { resetIdleLock(); return { ok: true } }, { requiresUnlock: false })
 }
 
+function registerSyncHandlers() {
+  handleAppIpc('sync:enqueue', (_event, item) => syncEngine.enqueue(item))
+  handleAppIpc('sync:pending-count', () => syncEngine.pendingCount())
+  handleAppIpc('sync:push-pending', (_event, context) => syncEngine.pushPending(context))
+  handleAppIpc('sync:pull-events', (_event, context, limit) => syncEngine.pullEvents(context, limit))
+  handleAppIpc('sync:acknowledge-pulled', (_event, context, cursor) => syncEngine.acknowledgePulled(context, cursor))
+}
+
 function registerDatabaseHandlers() {
   handleAppIpc('db:summary', () => localDb.getSummary())
   handleAppIpc('db:company:current', () => localDb.getCurrentCompany())
@@ -230,8 +240,8 @@ function registerDatabaseHandlers() {
     const win = BrowserWindow.getFocusedWindow()
     const result = await dialog.showSaveDialog(win, {
       title: 'Save encrypted TRADEXO backup',
-      defaultPath: path.join(app.getPath('documents'), 'TRADEXO-backup-' + new Date().toISOString().slice(0, 10) + '.bizora-backup'),
-      filters: [{ name: 'TRADEXO encrypted backup', extensions: ['bizora-backup'] }]
+      defaultPath: path.join(app.getPath('documents'), 'TRADEXO-backup-' + new Date().toISOString().slice(0, 10) + '.tradexo-backup'),
+      filters: [{ name: 'TRADEXO encrypted backup', extensions: ['tradexo-backup', 'bizora-backup'] }]
     })
     if (result.canceled || !result.filePath) return { cancelled: true }
     const data = localDb.createEncryptedBackup()
@@ -245,7 +255,7 @@ function registerDatabaseHandlers() {
     const selected = await dialog.showOpenDialog(win, {
       title: 'Choose a TRADEXO encrypted backup',
       properties: ['openFile'],
-      filters: [{ name: 'TRADEXO encrypted backup', extensions: ['bizora-backup'] }]
+      filters: [{ name: 'TRADEXO encrypted backup', extensions: ['tradexo-backup', 'bizora-backup'] }]
     })
     if (selected.canceled || !selected.filePaths?.[0]) return { cancelled: true }
     const confirmation = await dialog.showMessageBox(win, {
@@ -270,13 +280,22 @@ function registerDatabaseHandlers() {
 }
 
 app.whenReady().then(async () => {
-  const databasePath = path.join(app.getPath('userData'), 'data', 'bizora.sqlite')
+  const dataDirectory = path.join(app.getPath('userData'), 'data')
+  const databasePath = path.join(dataDirectory, 'tradexo.sqlite')
+  const legacyDatabasePath = path.join(dataDirectory, 'bizora.sqlite')
+  if (!fs.existsSync(databasePath) && fs.existsSync(legacyDatabasePath)) {
+    fs.renameSync(legacyDatabasePath, databasePath)
+  }
+  if (fs.existsSync(databasePath) && fs.existsSync(legacyDatabasePath)) {
+    throw new Error('Both legacy and TRADEXO database files exist. Contact support before opening to avoid choosing the wrong business data file.')
+  }
   if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows secure storage is unavailable; TRADEXO will not save business data without encryption.')
   const encryption = {
     encrypt: data => safeStorage.encryptString(data.toString('base64')),
     decrypt: data => Buffer.from(safeStorage.decryptString(data), 'base64')
   }
   localDb = await openLocalDatabase(databasePath, encryption)
+  syncEngine = createSyncEngine(app, safeStorage)
   pinMetadata = loadPinMetadata()
   failedPinAttempts = Number.isInteger(pinMetadata?.failedPinAttempts) ? pinMetadata.failedPinAttempts : 0
   blockedUntil = Number.isFinite(pinMetadata?.blockedUntil) ? pinMetadata.blockedUntil : 0
@@ -284,6 +303,7 @@ app.whenReady().then(async () => {
   handleAppIpc('app:get-version', () => app.getVersion(), { requiresUnlock: false })
   registerSecurityHandlers()
   registerDatabaseHandlers()
+  registerSyncHandlers()
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 }).catch(error => {

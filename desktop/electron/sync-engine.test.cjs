@@ -1,0 +1,143 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { createSyncEngine } = require('./sync-engine.cjs')
+
+function setup() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tradexo-sync-'))
+  const app = { getPath: () => dir }
+  const storage = {
+    isEncryptionAvailable: () => true,
+    encryptString: value => Buffer.from(value, 'utf8'),
+    decryptString: value => Buffer.from(value).toString('utf8')
+  }
+  return { engine: createSyncEngine(app, storage), dir }
+}
+
+const event = () => ({
+  event_id: 'f3b7e8a1-5d4c-4b2a-9a1e-123456789abc',
+  entity_type: 'sales_invoice',
+  entity_id: 'invoice-local-1',
+  operation: 'create',
+  payload: { total: 1250 },
+  schema_version: 1,
+  client_created_at: '2026-11-04T12:00:00.000Z'
+})
+
+test('offline queue stores events and ignores repeated event UUIDs', t => {
+  const { engine, dir } = setup()
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  assert.deepEqual(engine.enqueue(event()), { pending: 1 })
+  assert.deepEqual(engine.enqueue(event()), { pending: 1 })
+  assert.deepEqual(engine.pendingCount(), { pending: 1 })
+})
+
+test('offline queue rejects malformed or oversized events', t => {
+  const { engine, dir } = setup()
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  assert.throws(() => engine.enqueue({ ...event(), event_id: 'not-a-uuid' }), /UUID/)
+  assert.throws(() => engine.enqueue({ ...event(), operation: 'delete' }), /operation/)
+  assert.throws(() => engine.enqueue({ ...event(), payload: { data: 'x'.repeat(270000) } }), /256 KB/)
+  assert.deepEqual(engine.pendingCount(), { pending: 0 })
+})
+
+test('push preserves queue when server acknowledgement is incomplete', async t => {
+  const { engine, dir } = setup()
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  engine.enqueue(event())
+  const originalFetch = global.fetch
+  t.after(() => { global.fetch = originalFetch })
+  global.fetch = async () => ({ ok: true, json: async () => [{ accepted_count: 0, duplicate_count: 0 }] })
+  const context = {
+    tenantId: 'tenant-1', deviceId: 'device-1',
+    supabaseUrl: 'https://example.supabase.co', anonKey: 'public-key', accessToken: 'test-token'
+  }
+  await assert.rejects(engine.pushPending(context), /acknowledgement/)
+  assert.deepEqual(engine.pendingCount(), { pending: 1 })
+})
+
+
+test('push removes only the acknowledged batch from the encrypted queue', async t => {
+  const { engine, dir } = setup()
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  engine.enqueue(event())
+  const originalFetch = global.fetch
+  t.after(() => { global.fetch = originalFetch })
+  global.fetch = async () => ({ ok: true, json: async () => [{ accepted_count: 1, duplicate_count: 0 }] })
+  const context = {
+    tenantId: 'tenant-1', deviceId: 'device-1',
+    supabaseUrl: 'https://example.supabase.co', anonKey: 'public-key', accessToken: 'test-token'
+  }
+  assert.deepEqual(await engine.pushPending(context), { accepted: 1, duplicates: 0, pending: 0 })
+  assert.deepEqual(engine.pendingCount(), { pending: 0 })
+})
+
+test('pull uses the last acknowledged cursor and clamps page size', async t => {
+  const { engine, dir } = setup()
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const originalFetch = global.fetch
+  t.after(() => { global.fetch = originalFetch })
+  const calls = []
+  global.fetch = async (_url, options) => {
+    calls.push(JSON.parse(options.body))
+    return { ok: true, json: async () => [] }
+  }
+  const context = {
+    tenantId: 'tenant-1', deviceId: 'device-1',
+    supabaseUrl: 'https://example.supabase.co', anonKey: 'public-key', accessToken: 'test-token'
+  }
+  await engine.pullEvents(context, 9999)
+  assert.equal(calls[0].p_limit, 500)
+  engine.acknowledgePulled(context, {
+    receivedAt: '2026-11-04T12:00:00.000Z',
+    eventId: 'f3b7e8a1-5d4c-4b2a-9a1e-123456789abc'
+  })
+  await engine.pullEvents(context, 20)
+  assert.equal(calls[1].p_after_received_at, '2026-11-04T12:00:00.000Z')
+  assert.equal(calls[1].p_after_event_id, 'f3b7e8a1-5d4c-4b2a-9a1e-123456789abc')
+})
+
+test('queue refuses to access an existing encrypted queue when OS encryption is unavailable', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tradexo-sync-no-crypto-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const app = { getPath: () => dir }
+  let available = true
+  const storage = {
+    isEncryptionAvailable: () => available,
+    encryptString: value => Buffer.from(value),
+    decryptString: value => Buffer.from(value).toString('utf8')
+  }
+  const engine = createSyncEngine(app, storage)
+  engine.enqueue(event())
+  available = false
+  assert.throws(() => engine.pendingCount(), /encryption is unavailable/)
+  assert.throws(() => engine.enqueue({ ...event(), event_id: 'a3b7e8a1-5d4c-4b2a-9a1e-123456789abc' }), /encryption is unavailable/)
+})
+
+
+test('push acknowledgement preserves events enqueued while the network request is in flight', async t => {
+  const { engine, dir } = setup()
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  engine.enqueue(event())
+  const originalFetch = global.fetch
+  t.after(() => { global.fetch = originalFetch })
+  let finishRequest
+  global.fetch = () => new Promise(resolve => {
+    finishRequest = () => resolve({ ok: true, json: async () => [{ accepted_count: 1, duplicate_count: 0 }] })
+  })
+  const context = {
+    tenantId: 'tenant-1', deviceId: 'device-1',
+    supabaseUrl: 'https://example.supabase.co', anonKey: 'public-key', accessToken: 'test-token'
+  }
+  const pendingPush = engine.pushPending(context)
+  engine.enqueue({
+    ...event(),
+    event_id: 'a3b7e8a1-5d4c-4b2a-9a1e-123456789abc',
+    entity_id: 'invoice-local-2'
+  })
+  finishRequest()
+  assert.deepEqual(await pendingPush, { accepted: 1, duplicates: 0, pending: 1 })
+  assert.deepEqual(engine.pendingCount(), { pending: 1 })
+})

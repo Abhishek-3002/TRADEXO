@@ -96,3 +96,11 @@ Latest validation: GitHub Actions run 41707453670 passed on commit `ae3d55926f68
 
 ## Release gate
 Do not publish a customer download or call the product production-ready until Windows installation, migration, recovery, security, tax and sync tests pass.
+
+
+## Offline sync foundation — integration status (2026-11-05)
+- Added an encrypted local outbox and per-tenant/device pull cursors using Electron safeStorage.
+- Added strict Electron IPC handlers through the existing trusted-frame, PIN-unlocked application guard; the renderer receives only the narrow `window.tradexo.sync` bridge.
+- Added authenticated, tenant-membership-checked Supabase push/pull RPC migration and unit tests for queue validation, duplicate UUIDs, acknowledgement safety, cursor persistence, page limits and encryption-unavailable behavior.
+- Existing local database data is preserved when moving the legacy `bizora.sqlite` file to `tradexo.sqlite`; if both files exist, startup stops rather than silently selecting one. Legacy `.bizora-backup` files remain restorable alongside new `.tradexo-backup` files.
+- **Not yet complete:** business writes are not yet automatically recorded into the outbox; pulled events are not yet transactionally applied to the local database; tenant/device onboarding, session/token refresh, reconnect scheduling, conflict resolution and live Supabase migration verification remain release blockers. Do not use sync for live customer records yet.
