@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - rename-to-bizora
+      - 'integration/**'
   pull_request:
     branches:
       - main
